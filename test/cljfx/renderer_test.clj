@@ -1,11 +1,18 @@
 (ns cljfx.renderer-test
   (:require [clojure.test :refer :all]
             [testit.core :refer :all]
-            [cljfx.api :as fx])
+            [cljfx.api :as fx]
+            [clojure.test.check :as tc]
+            [clojure.test.check.properties :as prop]
+            [clojure.test.check.generators :as gen]
+            [com.gfredericks.test.chuck.clojure-test :refer [checking]]
+            [com.gfredericks.test.chuck.properties :as prop']
+            )
   (:import [javafx.stage Stage]
            [javafx.scene.control Button]
            [javafx.scene.control TextField]
-           [javafx.scene.input KeyCode KeyEvent]))
+           [javafx.scene.input KeyCode KeyEvent]
+           [java.util UUID]))
 
 (set! *warn-on-reflection* true)
 
@@ -116,13 +123,16 @@
 (deftest renderer-with-state-atom-and-map-desc
   ; A todo app that uses a map event handler mounted on a raw state atom.
   (let [; setup
+        gen-id #(str (UUID/randomUUID))
         *state (atom {:typed-text ""
-                      :by-id {0 {:id 0
-                                 :text "Buy milk"
-                                 :done true}
-                              1 {:id 1
-                                 :text "Buy socks"
-                                 :done false}}})
+                      :by-id (into {}
+                                   (map (fn [m]
+                                          ((juxt identity #(assoc m :id %))
+                                           (gen-id))))
+                                   [{:text "Buy milk"
+                                     :done true}
+                                    {:text "Buy socks"
+                                     :done false}])})
         todo-view (fn [{:keys [text id done]}]
                     {:fx/type :h-box
                      :spacing 5
@@ -134,13 +144,15 @@
                                  :style {:-fx-text-fill (if done :grey :black)}
                                  :text text}]})
         stage-atom (atom nil)
+        v-box-atom (atom nil)
+        text-field-atom (atom nil)
         root (fn [{:keys [by-id typed-text]}]
                {:fx/type fx/ext-on-instance-lifecycle
-                :showing true
                 :on-created #(reset! stage-atom %)
                 :desc
                 {:fx/type :stage
-                 ;:showing true
+                 :showing true
+                 :always-on-top true
                  :scene {:fx/type :scene
                          :root {:fx/type :v-box
                                 :pref-width 300
@@ -148,19 +160,30 @@
                                 :children [{:fx/type :scroll-pane
                                             :v-box/vgrow :always
                                             :fit-to-width true
-                                            :content {:fx/type :v-box
-                                                      :children (->> by-id
-                                                                     vals
-                                                                     (sort-by (juxt :done :id))
-                                                                     (map #(assoc %
-                                                                                  :fx/type todo-view
-                                                                                  :fx/key (:id %))))}}
-                                           {:fx/type :text-field
+                                            :content 
+                                            {:fx/type fx/ext-on-instance-lifecycle
+                                             :on-created #(reset! v-box-atom %)
+                                             :desc
+                                             {:fx/type :v-box
+                                              :id "v-box"
+                                              :children (->> by-id
+                                                             vals
+                                                             (sort-by (juxt :done :id))
+                                                             (map #(assoc %
+                                                                          :fx/type todo-view
+                                                                          :fx/key (:id %))))}}}
+                                           {:fx/type fx/ext-on-instance-lifecycle
                                             :v-box/margin 5
-                                            :text typed-text
-                                            :prompt-text "Add new todo and press ENTER"
-                                            :on-text-changed {:event/type ::type}
-                                            :on-key-pressed {:event/type ::press}}]}}}})
+                                            :on-created #(reset! text-field-atom %)
+                                            :desc
+                                            {:fx/type :text-field
+                                             :id "::text-field"
+                                             :text typed-text
+                                             :prompt-text "Add new todo and press ENTER"
+                                             :on-text-changed {:event/type ::type
+                                                               }
+                                             :on-key-pressed {:event/type ::press
+                                                              }}}]}}}})
         map-event-handler (fn [event]
                             (case (:event/type event)
                               ::set-done (swap! *state assoc-in [:by-id (:id event) :done] (:fx/event event))
@@ -173,11 +196,32 @@
                                                                       :text (:typed-text %)
                                                                       :done false}))))
                               nil))
+        renderer (fx/create-renderer
+                   :middleware (fx/wrap-map-desc assoc :fx/type root)
+                   :opts {:fx.opt/map-event-handler map-event-handler})
+        change-typed-text-via-state (fn [typed-text] (swap! *state assoc :typed-text typed-text))
+        change-typed-text-via-text-field (fn [typed-text]
+                                           @(fx/on-fx-thread
+                                              (.setText ^TextField @text-field-atom typed-text)))
+        check-typed-text (fn [typed-text]
+                           (let [state (:typed-text @*state)
+                                 field (.getText ^TextField @text-field-atom)]
+                             (is (= typed-text
+                                    state
+                                    field)
+                                 "Typed text should be consistent between state and rendering")))
+
         ; start app
-        _ (fx/mount-renderer
-            *state
-            (fx/create-renderer
-              :middleware (fx/wrap-map-desc assoc :fx/type root)
-              :opts {:fx.opt/map-event-handler map-event-handler}))
+        _ @(fx/mount-renderer *state renderer)
+        res (checking "Can change either the atom or text-field" 1000
+                      [typed-text gen/string
+                       change-typed-text (gen/elements
+                                           [change-typed-text-via-state
+                                            change-typed-text-via-text-field])]
+                      (run! #(% typed-text)
+                            [change-typed-text
+                             check-typed-text]))
+        ;_ (prn "state" @*state)
+        ;_ @(fx/unmount-renderer *state renderer)
         ]
-    ))
+    :ok))
