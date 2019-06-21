@@ -58,21 +58,8 @@
                       ^ListChangeListener %2)))
 
 (defn observable-list [get-list-fn]
-  (let [set-all! (fn [instance coll]
-                   (let [l ^ObservableList (get-list-fn instance)
-                         size (.size l)
-                         csize (count coll)]
-                     ;; update the first (count coll) elements in ObservableList
-                     (reduce (fn [_ [idx e]]
-                               (if (< idx size)
-                                 (when (not (identical? e (.get l idx)))
-                                   (.set l idx e))
-                                 (.add l idx e)))
-                             nil
-                             (map-indexed vector coll))
-                     ;; delete tail past (count count)
-                     (when (< csize size)
-                       (.remove l (count coll) size))))]
+  (let [set-all! #(.setAll ^ObservableList (get-list-fn %1)
+                           ^Collection %2)]
     (with-meta
       [::observable-list get-list-fn]
       {`assign! (fn [_ instance coerce value]
