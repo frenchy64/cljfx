@@ -8,15 +8,14 @@
             [cljfx.prop :as prop]
             [cljfx.mutator :as mutator])
   (:import [javafx.scene.control Tab TabPane TabPane$TabClosingPolicy TabPane$TabDragPolicy]
-           ; TODO optionally compile this if not available (com.sun.* is a worrying package)
-           [com.sun.javafx.scene.control TabObservableList]
            [javafx.collections ObservableList]
            [javafx.geometry Side]
            [javafx.scene AccessibleRole]))
 
 (set! *warn-on-reflection* true)
 
-(defn sync-tab-observable-list [^TabObservableList l coll]
+(defn sync-observable-list [^ObservableList l coll]
+  (prn "sync-observable-list")
   (let [size (.size l)
         ;; update the first (count coll) elements in ObservableList
         coll-size (loop [idx 0
@@ -25,21 +24,20 @@
                       (do
                         (if (< idx size)
                           (when (not (identical? e (.get l idx)))
+                            (prn "write")
                             (.set l idx e))
-                          (.add l idx e))
+                          (do
+                            (prn "add")
+                            (.add l idx e)))
                         (recur (inc idx) es))
                       idx))]
     ;; delete tail past coll-size
     (when (< coll-size size)
-      (.remove l (count coll) size))))
+      (prn "remove")
+      (.remove l coll-size size))))
 
 (defn tab-observable-list [get-list-fn]
-  (let [set-all! (fn [instance coll]
-                   (let [ol (get-list-fn instance)]
-                     (if (instance? TabObservableList ol)
-                       (sync-tab-observable-list ol coll)
-                       ;; fall back to naive implementation
-                       (.setAll ^ObservableList ol ^java.util.Collection coll))))]
+  (let [set-all! #(sync-observable-list (get-list-fn %1) %2)]
     (with-meta
       [::tab-observable-list get-list-fn]
       {`mutator/assign! (fn [_ instance coerce value]
@@ -70,7 +68,8 @@
       :tab-max-width [:setter lifecycle/scalar :coerce double :default Double/MAX_VALUE]
       :tab-min-height [:setter lifecycle/scalar :coerce double :default 0.0]
       :tab-min-width [:setter lifecycle/scalar :coerce double :default 0.0]
-      :tabs [:list lifecycle/dynamics]
+      :tabs (prop/make (tab-observable-list #(.getTabs ^TabPane %))
+                       lifecycle/dynamics)
       :on-tabs-changed (prop/make (mutator/list-change-listener #(.getTabs ^TabPane %))
                                   lifecycle/list-change-listener))))
 
