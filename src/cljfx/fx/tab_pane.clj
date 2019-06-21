@@ -6,18 +6,44 @@
             [cljfx.mutator :as mutator]
             [cljfx.fx.control :as fx.control]
             [cljfx.prop :as prop]
+            [clojure.data :as data]
             [cljfx.mutator :as mutator])
   (:import [javafx.scene.control Tab TabPane TabPane$TabClosingPolicy TabPane$TabDragPolicy]
+           [com.sun.javafx.scene.control TabObservableList]
            [javafx.collections ObservableList]
+           [java.util Collection]
            [javafx.geometry Side]
            [javafx.scene AccessibleRole]))
 
 (set! *warn-on-reflection* true)
 
+(comment
+(data/diff [1 2 3] [1 4 3])
+(data/diff [1 2] [1 2 3])
+(data/diff [1 2] [1 2 3])
+
+(data/diff [1 2] [2 1])
+(data/diff [1 4 2] [2 4 1])
+
+(data/diff [1 2] [4 1])
+(data/diff [1 2 3 4]
+           [4 2 3 1])
+;; try using this diff to guide removable process
+;; first delete all tabs only in left or right list,
+;; then add them all back in one pass.
+(data/diff [1 2 3 4]
+           [4 2 3 1 5])
+)
+
 (defn sync-observable-list [^ObservableList l coll]
-  (prn "sync-observable-list")
+  (let [[only-in-l only-in-coll in-both :as diff] (data/diff l coll)]
+    (prn "sync-observable-list" l coll)
+    (prn "diff" diff)
+    (.setAll l ^Collection coll)
+  #_
   (let [size (.size l)
-        ;; update the first (count coll) elements in ObservableList
+        ; first remove all moved items, add new items, and remove tail
+        ; then add back moved items in the correct positions
         coll-size (loop [idx 0
                          [e & es :as e-all] coll]
                     (if (seq e-all)
@@ -34,7 +60,7 @@
     ;; delete tail past coll-size
     (when (< coll-size size)
       (prn "remove")
-      (.remove l coll-size size))))
+      (.remove l coll-size size)))))
 
 (defn tab-observable-list [get-list-fn]
   (let [set-all! #(sync-observable-list (get-list-fn %1) %2)]
