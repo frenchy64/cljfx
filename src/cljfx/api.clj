@@ -63,7 +63,8 @@
             [cljfx.fx :as fx]
             [cljfx.lifecycle :as lifecycle]
             [cljfx.platform :as platform]
-            [cljfx.renderer :as renderer]))
+            [cljfx.renderer :as renderer])
+  (:import [java.util UUID]))
 
 (defonce
   ^{:doc "Starts JavaFX runtime and sets implicit exit to false if JavaFX wasn't started
@@ -180,7 +181,7 @@
   "Extension lifecycle that returns component instance created by [[ext-let-refs]]
 
   Supported keys:
-  - `:ref` (required) - component identifier used as a key in [[ext-let-ref]]'s `:refs`
+  - `:ref` (required) - component identifier used as a key in [[ext-let-refs]]'s `:refs`
     map"
   (lifecycle/get-ref :ref))
 
@@ -474,3 +475,32 @@
     (mount-renderer *context renderer)
     {:renderer renderer
      :handler handler}))
+
+(defmacro local-refs
+  "Generate lexically-scoped ref keys and let-bind keys to given symbols over the given body.
+  Ref keys introduced by [[local-refs]] preserve lexical scoping when used as ref keys to
+  [[ext-let-refs]] and [[ext-get-ref]].
+
+  Keys are generated at compile-time to reduce cache misses
+  and their representation is compatible with AOT compilation,
+  but beyond that, the concrete representation of generated keys is internal and
+  subject to change.
+
+  eg. (local-refs [node1 node2]
+        {:fx/type fx/ext-let-refs
+         :refs {node1 {:fx/type :label, :text \"hello\"}
+                node2 {:fx/type :label, :text \"world\"}}
+         :desc {:fx/type :h-box
+                :children [{:fx/type fx/ext-get-ref
+                            :ref node1}
+                           {:fx/type fx/ext-get-ref
+                            :ref node2}})"
+  [bindings & body]
+  {:pre [(vector? bindings)
+         (apply distinct? bindings)]}
+  `(let ~(into []
+               (mapcat (fn [b]
+                         {:pre [(simple-symbol? b)]}
+                         [b (keyword (str b "__" (UUID/randomUUID)))]))
+               bindings)
+     ~@body))
