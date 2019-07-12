@@ -717,6 +717,28 @@ prefix in their names.
    dialogs defined close to usage places, you can find an example of 
    such dialog at [examples/e22_button_with_confirmation_dialog.clj](examples/e22_button_with_confirmation_dialog.clj) 
 
+   Bindings in the same `ext-let-refs` cannot access eachother and sequential
+   bindings are achieved via nested `ext-let-refs`, like in the `tree-view` function of
+   [examples/e27_selection_models.clj](examples/e27_selection_models.clj).
+
+   References should only be used when they are absolutely essential as there are several
+   caveats to using them:
+   - references are _dynamically scoped_ (like `:dynamic` Vars), despite many use-cases
+     being better suited to lexical scoping rules.
+   - `fx/ext-get-ref`s are not dereferenced
+     before, for example, being passed to other `:fx/type` functions, and so references may be
+     unintentionally captured.
+   - "a node may only appear
+     [at most once](https://openjfx.io/javadoc/12/javafx.graphics/javafx/scene/Node.html) anywhere in the scene graph",
+     so references cannot be used to simultaneously display the same node in multiple places.
+
+   These caveats 
+   when passed to and returned from functions as free variables (ie., when passing/returning
+   an `ext-get-ref` call without a capturing `ext-let-refs`).
+   
+   Note 
+   so 
+
 4. `fx/ext-many`
 
    Usually props that expect collections of elements already ask for a

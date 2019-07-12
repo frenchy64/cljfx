@@ -50,17 +50,14 @@
   (let [nrender (record-render render-key)]
     ; lexically scope `circle-ref` to avoid unintended
     ; capture of `fx/ext-get-ref`s in `desc`
-    (fx/local-refs [circle-ref]
-      {:fx/type fx/ext-let-refs
-       :refs {circle-ref {:fx/type :circle :radius 10}}
-       :desc {:fx/type :h-box
-              :children (concat
-                          ((if flip identity rseq)
-                           [(with-vheader "the-circle" {:fx/type fx/ext-get-ref
-                                                        :ref circle-ref})
-                            (with-vheader "the-rect" desc)])
-                          [{:fx/type :label
-                            :text (str "Renderings: " nrender)}])}})))
+    (let [circle {:fx/type :circle :radius 10}]
+      {:fx/type :h-box
+       :children (concat
+                   ((if flip identity rseq)
+                    [(with-vheader "the-circle" circle)
+                     (with-vheader "the-rect" desc)])
+                   [{:fx/type :label
+                     :text (str "Renderings: " nrender)}])})))
 
 ; variable capture isn't that big a deal because a node can
 ; only appear once in a scene, so passing a `ext-get-ref`
@@ -74,7 +71,7 @@
     {:fx/type fx/ext-let-refs
      :refs {circle-ref (if rec?
                          {:fx/type :circle :radius 10}
-                         {:fx/type :circle :radius 30}) }
+                         {:fx/type :circle :radius 30})}
      :desc {:fx/type :v-box
             :children (concat
                         [{:fx/type :h-box
