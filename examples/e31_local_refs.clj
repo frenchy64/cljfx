@@ -62,6 +62,37 @@
                           [{:fx/type :label
                             :text (str "Renderings: " nrender)}])}})))
 
+; variable capture isn't that big a deal because a node can
+; only appear once in a scene, so passing a `ext-get-ref`
+; to another function isn't as flexible as passing a desc,
+; as it cannot be duplicated.
+; as a best practice, an :fx/type function shouldn't be passed
+; "free" `ext-get-ref`s, and, relatedly, an :fx/type function should only return
+; "bound" `ext-get-ref`s.
+(defn self-rec [{:keys [fx/context desc rec? flip]}]
+  (fx/local-refs [circle-ref]
+    {:fx/type fx/ext-let-refs
+     :refs {circle-ref (if rec?
+                         {:fx/type :circle :radius 10}
+                         {:fx/type :circle :radius 30}) }
+     :desc {:fx/type :v-box
+            :children (concat
+                        [{:fx/type :h-box
+                          :children (concat
+                                      ((if flip identity rseq)
+                                       [(with-vheader (str "the-circle " rec?)
+                                          {:fx/type fx/ext-get-ref
+                                           :ref circle-ref})
+                                        (with-vheader (str "the-rect " rec?)
+                                          desc)]))}]
+                        (when rec?
+                          [{:fx/type :v-box
+                            :children [{:fx/type self-rec
+                                        :flip flip
+                                        :desc desc #_{:fx/type fx/ext-get-ref
+                                                      :ref circle-ref}
+                                        :rec? false}]}]))}}))
+
 (defn view [{:keys [fx/context]}]
   (let [flip (fx/sub context :flip)
         rect-desc {:fx/type :rectangle :width 50 :height 100}]
@@ -124,7 +155,15 @@
                                              :flip flip
                                              :render-key (gen-render-key)
                                              :desc {:fx/type fx/ext-get-ref
-                                                    :ref rect-key}}}))]}]}}}))
+                                                    :ref rect-key}}}))
+                                 (with-vheader
+                                   "fx/local-refs (self-rec)"
+                                   {:fx/type self-rec
+                                    :flip flip
+                                    :rec? true
+                                    :render-key (gen-render-key)
+                                    :desc rect-desc})
+                                 ]}]}}}))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; End interesting stuff ;;
@@ -153,9 +192,9 @@
          (<= (count children)
              (* rows columns))]}
   {:fx/type :grid-pane
-   :hgap 20
-   :vgap 20
-   :padding 30
+   ;:hgap 20
+   ;:vgap 20
+   ;:padding 30
    :row-constraints (repeat rows {:fx/type :row-constraints
                                   :percent-height (/ 100 rows)})
    :column-constraints (repeat columns {:fx/type :column-constraints
@@ -172,8 +211,8 @@
 
 (defn with-vheader [text desc]
   {:fx/type :v-box
-   :fill-width true
-   :spacing 20
+   ;:fill-width true
+   ;:spacing 20
    :padding 10
    :children [{:fx/type :label
                :wrap-text true
