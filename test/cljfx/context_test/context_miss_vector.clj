@@ -5,11 +5,11 @@
 
 (defmulti handler :event/type)
 
-(defmethod handler ::more-button-panes
+(defmethod handler ::more-buttons
   [{:keys [fx/context id] :as m}]
   {:context (fx/swap-context context update ::ids (fnil conj []) (gensym :id))})
 
-(defmethod handler ::less-button-panes
+(defmethod handler ::less-buttons
   [{:keys [fx/context] :as m}]
   {:context (fx/swap-context context update ::ids
                              #(or (when (seq %) (pop %)) []))})
@@ -20,12 +20,12 @@
 
 ;; Views
 
-(defn dynamic-button-panes [{:keys [fx/context]}]
+(defn buttons [{:keys [fx/context]}]
   {:fx/type :scroll-pane
    :fit-to-width true
    :fit-to-height true
    :content
-   {:fx/type :v-box
+   {:fx/type :h-box
     :children (mapv #(do
                        {:fx/type :button
                         :text (str "x" (get (fx/sub context ::clicked) % 0))
@@ -49,14 +49,14 @@
                   :children
                   [{:fx/type :h-box
                     :children [{:fx/type :button
-                                :on-action {:event/type ::less-button-panes}
+                                :on-action {:event/type ::less-buttons}
                                 :text (str "Less button panes")}
                                {:fx/type :button
-                                :on-action {:event/type ::more-button-panes}
+                                :on-action {:event/type ::more-buttons}
                                 :text (str "More button panes")}]}
                    {:fx/type :label
                     :text (str "Sum: " (fx/sub context sum-buttons))}
-                   {:fx/type dynamic-button-panes}]}}})
+                   {:fx/type buttons}]}}})
 
 ;; Main app
 
