@@ -10,6 +10,10 @@
 (defn button-pane-path [id]
   [::button-pane id])
 
+(defn all-button-pane-paths [context path]
+  (map #(conj path (button-pane-path %))
+       (fx/sub context ::dynamic-ids)))
+
 ;; Effects
 
 (def effects {::gen-button-pane-id
@@ -32,7 +36,6 @@
 
 (defmethod handler ::less-button-panes
   [{:keys [fx/context] :as m}]
-  (prn "::less-button-panes" (vec (keys m)))
   {:context (fx/swap-context context update ::dynamic-ids
                              #(or (when (seq %) (pop %)) []))})
 
@@ -57,7 +60,12 @@
                         :fx/extend-path (button-pane-path %)})
                     (fx/sub context ::dynamic-ids))}})
 
-(defn view [{:keys [fx/path] :as m}]
+(defn sum-clicks [context path]
+  (reduce #(+ %1 (fx/sub context button-pane/sum-clicks %2))
+          0
+          (fx/sub context all-button-pane-paths path)))
+
+(defn view [{:keys [fx/context fx/path] :as m}]
   {:fx/type :stage
    :showing true
    :always-on-top true
@@ -76,6 +84,8 @@
                                {:fx/type :button
                                 :on-action {:event/type ::flip-layout}
                                 :text (str "Flip layout")}]}
+                   {:fx/type :label
+                    :text (str "Grand total clicks: " (fx/sub context sum-clicks path))}
                    {:fx/type dynamic-button-panes}]}}})
 
 ;; Main app

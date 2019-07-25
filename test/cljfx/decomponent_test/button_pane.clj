@@ -61,6 +61,16 @@
 
 ;; Views
 
+(defn all-button-paths [context path]
+  (mapv #(button-path path %)
+        (concat [::first-button ::second-button]
+                (sub-in context (dynamic-ids-path path)))))
+
+(defn sum-clicks [context path]
+  (reduce #(+ %1 (fx/sub context button/get-clicked %2))
+          0
+          (fx/sub context all-button-paths path)))
+
 (defn dynamic-buttons [{:keys [fx/context fx/path]}]
   {:fx/type :v-box
    :children (mapv #(do
@@ -70,15 +80,11 @@
 
 (defn summarize-buttons [{:keys [fx/context fx/path]}]
   {:pre [path]}
-  (let [sum (reduce (fn [sum id]
-                      (+ sum (fx/sub context button/get-clicked (button-path path id))))
-                    0
-                    (concat [::first-button ::second-button]
-                            (sub-in context (dynamic-ids-path path))))]
+  (let [sum (fx/sub context sum-clicks path)]
     {:fx/type :label
      :text (str "Sum: " sum)}))
 
-(defn view [{:keys [fx/path]}]
+(defn view [_]
   {:fx/type :v-box
    :spacing 10
    :children [{:fx/type :label

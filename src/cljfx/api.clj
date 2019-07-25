@@ -472,6 +472,7 @@
                     renderer-middleware identity
                     renderer-error-handler renderer/default-error-handler}
                :as opt}]
+  ;;TODO allow root keyword in *context (ie. ::decomponents) to be customized
   (let [rdecomponent (some-> decomponents decomponent/resolve-decomponents)
         effects (cond-> effects
                   rdecomponent (merge (:effects rdecomponent)))
