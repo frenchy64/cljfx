@@ -3,13 +3,11 @@
 
 ;; Initial State
 
-(defn init-state [] {#_#_::clicked 0})
+(defn init-state [] {::clicked 0})
 
 ;; Views
 
-(defn button-with-state
-  "Use this view to show a button"
-  [{:keys [fx/context] :as m}]
+(defn button-with-state [{:keys [fx/context]}]
   (let [clicked (fx/sub context ::clicked)]
     {:fx/type :button
      :on-action {:event/type ::clicked
@@ -23,20 +21,30 @@
    :width 600
    :height 500
    :scene {:fx/type :scene
-           :root {:fx/type button-with-state}}})
-
-; Effects
-
-(def effects {::log-click (fn [{:keys [clicked fx/path]} dispatch!]
-                            (prn path "clicked!" (or clicked 0)))})
+           :root {:fx/type :v-box
+                  :children [{:fx/type :h-box
+                              :children [{:fx/type :button
+                                          :on-action {:event/type ::reset-assoc}
+                                          :text (str "Reset via assoc")}
+                                         {:fx/type :button
+                                          :on-action {:event/type ::reset-dissoc}
+                                          :text (str "Reset via dissoc")}]}
+                             {:fx/type button-with-state}]}}})
 
 ; Handlers
 
 (defmulti handler :event/type)
 (defmethod handler ::clicked
   [{:keys [fx/context clicked]}]
-  {:context (fx/swap-context context update ::clicked (fnil inc 0))
-   ::log-click {:clicked clicked}})
+  {:context (fx/swap-context context update ::clicked (fnil inc 0))})
+
+(defmethod handler ::reset-dissoc
+  [{:keys [fx/context]}]
+  {:context (fx/swap-context context dissoc ::clicked)})
+
+(defmethod handler ::reset-assoc
+  [{:keys [fx/context]}]
+  {:context (fx/swap-context context assoc ::clicked 0)})
 
 ;; Main app
 
