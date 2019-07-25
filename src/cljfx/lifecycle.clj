@@ -123,9 +123,11 @@
 (defn- make-handler-fn [desc opts]
   (cond
     (map? desc)
-    (let [map-event-handler (:fx.opt/map-event-handler opts)]
+    (let [map-event-handler (:fx.opt/map-event-handler opts)
+          path (:fx/path opts)]
       #(when-not *in-progress?*
-         (map-event-handler (assoc desc :fx/event %))))
+         (map-event-handler (assoc desc :fx/event %
+                                   :fx/path path))))
 
     (fn? desc)
     #(when-not *in-progress?*
@@ -455,30 +457,42 @@
     {`create (fn [_ desc opts]
                (with-meta
                  {:context desc
-                  :child (create lifecycle desc (assoc opts :fx/context desc))}
+                  :child (create lifecycle desc (assoc opts :fx/context desc
+                                                       :fx/path [::decomponents]))}
                  {`component/instance #(-> % :child component/instance)}))
      `advance (fn [_ component desc opts]
                 (-> component
                     (assoc :context desc)
-                    (update :child #(advance lifecycle % desc (assoc opts :fx/context desc)))))
+                    (update :child #(advance lifecycle % desc (assoc opts :fx/context desc
+                                                                     :fx/path [::decomponents])))))
      `delete (fn [_ component opts]
                (context/clear-cache! (:context component))
                (delete lifecycle (:child component) opts))}))
 
-(defn- call-context-fn [context desc]
-  ((:fx/type desc) (-> desc (dissoc :fx/type) (assoc :fx/context context))))
+(defn- call-context-fn [context desc path]
+  ((:fx/type desc) (-> desc
+                       (dissoc :fx/type :fx/extend-path)
+                       (assoc :fx/context context
+                              :fx/path (if-let [e (find desc :fx/extend-path)]
+                                         (conj path (val e))
+                                         path)))))
 
 (defn- sub-context-fn [desc opts]
-  (let [context (:fx/context opts)]
-    (context/sub context call-context-fn desc)))
+  (let [context (:fx/context opts)
+        path (:fx/path opts)]
+    (context/sub context call-context-fn desc path)))
 
 (def context-fn->dynamic
   (with-meta
     [::context-fn->dynamic]
     {`create (fn [_ desc opts]
-               (create dynamic (sub-context-fn desc opts) opts))
+               (create dynamic (sub-context-fn desc opts)
+                       (cond-> opts
+                         (:fx/extend-path desc) (update :fx/path conj (:fx/extend-path desc)))))
      `advance (fn [_ component desc opts]
-                (advance dynamic component (sub-context-fn desc opts) opts))
+                (advance dynamic component (sub-context-fn desc opts)
+                         (cond-> opts
+                           (:fx/extend-path desc) (update :fx/path conj (:fx/extend-path desc)))))
      `delete (fn [_ component opts]
                (delete dynamic component opts))}))
 

@@ -63,7 +63,8 @@
             [cljfx.fx :as fx]
             [cljfx.lifecycle :as lifecycle]
             [cljfx.platform :as platform]
-            [cljfx.renderer :as renderer]))
+            [cljfx.renderer :as renderer]
+            [cljfx.decomponent :as decomponent]))
 
 (defonce
   ^{:doc "Starts JavaFX runtime and sets implicit exit to false if JavaFX wasn't started
@@ -440,6 +441,20 @@
   - `:renderer-error-handler` (optional, prints Exception stack traces and re-throws
     Errors by default) - 1-argument function that will receive Throwables thrown during
     advancing
+  - `:decomponents` - A set of fully-qualified symbols naming vars containing a Decomponent:
+
+    ```clojure
+    (defalias Decomponent
+      (HMap :optional {:effects EffectsMap
+                       :co-effects CoEffectsMap
+                       :init-state StateMap
+                       :event-handler-map (Map EventType EventHandler)
+                       :decomponents (Set QualSym)
+                       :swap-state-on-render-error [State Throwable -> State]}))
+    ```
+
+    Each component is installed as if included in the main app, so the keys
+    of each :effects, :init-state, etc., map should be unique (eg., namespaced keywords).
 
   Note that since events are handled using agents, you'll need to call
   [[clojure.core/shutdown-agents]] to gracefully stop JVM"
@@ -449,13 +464,28 @@
                       effects
                       async-agent-options
                       renderer-middleware
-                      renderer-error-handler]
+                      renderer-error-handler
+                      decomponents]
                :or {co-effects {}
                     effects {}
                     async-agent-options {}
                     renderer-middleware identity
-                    renderer-error-handler renderer/default-error-handler}}]
-  (let [handler (-> event-handler
+                    renderer-error-handler renderer/default-error-handler}
+               :as opt}]
+  (let [rdecomponent (some-> decomponents decomponent/resolve-decomponents)
+        effects (cond-> effects
+                  rdecomponent (merge (:effects rdecomponent)))
+        co-effects (cond-> co-effects
+                     rdecomponent (merge (:co-effects rdecomponent)))
+        renderer-error-handler (cond-> renderer-error-handler
+                                 rdecomponent (decomponent/combine-render-error-handler
+                                                *context (:swap-state-on-render-error-fns rdecomponent)))
+        event-handler (cond-> event-handler
+                        rdecomponent (decomponent/combine-event-handler
+                                       (:event-handler-map rdecomponent)))
+        ;; hack?
+        _ (some->> (:init-state rdecomponent) (swap! *context context/swap merge))
+        handler (-> event-handler
                     (event-handler/wrap-co-effects
                       (defaults/fill-co-effects co-effects *context))
                     (event-handler/wrap-effects

@@ -95,7 +95,7 @@
           (:write selection-capabilities) (assoc :on-selected-item-changed {:event/type ::select-tab}))
         {:fx/type :tab-pane
          :tabs (map #(-> (get-ref %)
-                         (assoc :fx/id %))
+                         (assoc :fx/key %))
                     items)}))))
 
 (defn table-view [{:keys [path->value selection selection-mode]}]
