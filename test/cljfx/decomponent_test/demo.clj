@@ -1,3 +1,7 @@
+; Ideas:
+; - garbage collect local state on decomponent delete
+;   - if a desc contains :fx/extend-path, dissoc the extended
+;     path from *context
 (ns cljfx.decomponent-test.demo
   (:require [cljfx.api :as fx]
             [cljfx.decomponent-test.button-pane :as button-pane]))
@@ -5,14 +9,15 @@
 ;; Initial State
 
 (defn init-state [] {::dynamic-ids []
-                     ::flip-layout false})
+                     ::flip-layout false
+                     ::decomponents {}})
 
 (defn button-pane-path [id]
   [::button-pane id])
 
 (defn all-button-pane-paths [context path]
-  (map #(conj path (button-pane-path %))
-       (fx/sub context ::dynamic-ids)))
+  (mapv #(conj path (button-pane-path %))
+        (fx/sub context ::dynamic-ids)))
 
 ;; Effects
 
@@ -61,6 +66,7 @@
                     (fx/sub context ::dynamic-ids))}})
 
 (defn sum-clicks [context path]
+  (prn "sum-clicks top-level" path)
   (reduce #(+ %1 (fx/sub context button-pane/sum-clicks %2))
           0
           (fx/sub context all-button-pane-paths path)))
@@ -102,6 +108,7 @@
 (def app
   (fx/create-app *context
     :decomponents `#{button-pane/decomponent}
+    :decomponent-root ::decomponents
     :event-handler handler
     :desc-fn (fn [_]
                {:fx/type view})

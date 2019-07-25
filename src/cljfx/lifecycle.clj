@@ -451,6 +451,9 @@
      `delete (fn [_ component opts]
                (delete lifecycle component opts))}))
 
+(defn init-path [{:keys [fx.opt/decomponent-root]}]
+  [(or decomponent-root ::decomponents)])
+
 (defn wrap-context-desc [lifecycle]
   (with-meta
     [::context-desc lifecycle]
@@ -458,13 +461,13 @@
                (with-meta
                  {:context desc
                   :child (create lifecycle desc (assoc opts :fx/context desc
-                                                       :fx/path [::decomponents]))}
+                                                       :fx/path (init-path opts)))}
                  {`component/instance #(-> % :child component/instance)}))
      `advance (fn [_ component desc opts]
                 (-> component
                     (assoc :context desc)
                     (update :child #(advance lifecycle % desc (assoc opts :fx/context desc
-                                                                     :fx/path [::decomponents])))))
+                                                                     :fx/path (init-path opts))))))
      `delete (fn [_ component opts]
                (context/clear-cache! (:context component))
                (delete lifecycle (:child component) opts))}))

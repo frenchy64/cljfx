@@ -84,34 +84,3 @@
                  init-state (update :init-state merge init-state)
                  swap-state-on-render-error (update :swap-state-on-render-error-fns (fnil conj #{})
                                                     swap-state-on-render-error)))))))
-
-#_
-(defn create-app
-  "Takes the same options as `fx/create-app`, and returns the same value as `fx/create-app`.
-
-  Additionally takes a keyword argument `:untypable.fx.decomponent/decomponents`
-  that is a set of fully qualified symbols naming vars holding the
-  following Decomponent shape of value:
-
-  (defalias Decomponent
-    (HMap :optional {:effects EffectsMap
-                     :co-effects CoEffectsMap
-                     :init-state StateMap
-                     :event-handler-map (Map EventType EventHandler)
-                     :decomponents (Set QualSym)
-                     :swap-state-on-render-error [State Throwable -> State]}))
-
-  Each component is installed as if included in the main app, so the keys
-  of each :effects, :init-state, etc., map should be unique (eg., namespaced keywords)."
-  [*context & {:as opt}]
-  (let [{:keys [init-state event-handler-map effects co-effects
-                swap-state-on-render-error-fns]} (resolve-decomponents (::decomponents opt))
-        _ (when init-state
-            (swap! *context context/swap merge init-state))
-        opt (cond-> (dissoc opt ::decomponents)
-              event-handler-map (update :event-handler combine-event-handler event-handler-map)
-              effects (update :effects merge effects)
-              co-effects (update :co-effects merge co-effects)
-              swap-state-on-render-error-fns (update :render-error-handler combine-render-error-handler
-                                                     *context swap-state-on-render-error-fns))]
-    (apply fx/create-app *context (mapcat identity opt))))
