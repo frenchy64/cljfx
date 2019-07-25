@@ -3,18 +3,11 @@
 
 ;; Initial State
 
-(defn init-state [] {::clicked 0})
+(defn init-state [] {::clicked nil})
 
 ;; Views
 
-(defn button-with-state [{:keys [fx/context]}]
-  (let [clicked (fx/sub context ::clicked)]
-    {:fx/type :button
-     :on-action {:event/type ::clicked
-                 :clicked clicked}
-     :text (str "Clicked x" (or clicked 0))}))
-
-(defn view [_]
+(defn view [{:keys [fx/context]}]
   {:fx/type :stage
    :showing true
    :always-on-top true
@@ -29,7 +22,11 @@
                                          {:fx/type :button
                                           :on-action {:event/type ::reset-dissoc}
                                           :text (str "Reset via dissoc")}]}
-                             {:fx/type button-with-state}]}}})
+                             (let [clicked (fx/sub context ::clicked)]
+                               {:fx/type :button
+                                :on-action {:event/type ::clicked
+                                            :clicked clicked}
+                                :text (str "Clicked x" (or clicked 0))}) ]}}})
 
 ; Handlers
 
@@ -44,7 +41,7 @@
 
 (defmethod handler ::reset-assoc
   [{:keys [fx/context]}]
-  {:context (fx/swap-context context assoc ::clicked 0)})
+  {:context (fx/swap-context context assoc ::clicked nil)})
 
 ;; Main app
 
