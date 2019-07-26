@@ -105,17 +105,19 @@
             @*sum-buttons-counter => 1)
         context (context/swap context create-id :a)
         _ (facts
-            "After changing template depends on [:ids] and [:values] subscriptions"
+            "After changing, [template] depends on [:ids] and [:values] subscriptions"
             (context/sub context template) => 0
             @*sum-buttons-counter => 2)
         context (context/swap context inc-value :a)
         _ (facts
-            "Since since template subscribes to :values, it is updated"
+            "Since [template] subscribes to [:values], it is updated"
             (context/sub context template) => 1
             @*sum-buttons-counter => 3)
+        #_#_
         context (context/swap context create-id :b)
+        #_#_
         _ (facts
-            "Since since template subscribes to :values, it is updated"
+            "Since [template] subscribes to [:ids], it is updated"
             (context/sub context template) => 1
             @*sum-buttons-counter => 4)
         ]))
