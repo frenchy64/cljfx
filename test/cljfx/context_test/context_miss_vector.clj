@@ -11,8 +11,12 @@
 
 (defmethod handler ::less-buttons
   [{:keys [fx/context] :as m}]
-  {:context (fx/swap-context context update ::ids
-                             #(or (when (seq %) (pop %)) []))})
+  {:context (-> context
+                (fx/swap-context update ::ids
+                                 #(or (when (seq %) (pop %)) []))
+                ; clean up state
+                (fx/swap-context update ::clicked
+                                 dissoc (peek (fx/sub context ::ids))))})
 
 (defmethod handler ::clicked
   [{:keys [fx/context id] :as m}]
@@ -21,20 +25,24 @@
 ;; Views
 
 (defn buttons [{:keys [fx/context]}]
-  {:fx/type :scroll-pane
-   :fit-to-width true
-   :fit-to-height true
-   :content
-   {:fx/type :h-box
-    :children (mapv #(do
-                       {:fx/type :button
-                        :text (str "x" (get (fx/sub context ::clicked) % 0))
-                        :on-action {:event/type ::clicked
-                                    :id %}})
-                    (fx/sub context ::ids))}})
+  (let [clicked (fx/sub context ::clicked)]
+    {:fx/type :scroll-pane
+     :fit-to-width true
+     :fit-to-height true
+     :content
+     {:fx/type :h-box
+      :children (mapv (fn [id]
+                        {:fx/type :button
+                         :text (str "x" (get clicked id 0))
+                         :on-action {:event/type ::clicked
+                                     :id id}})
+                      (fx/sub context ::ids))}}))
 
 (defn sum-buttons [context]
-  (reduce #(+ %1 (get (fx/sub context ::clicked) %2 0))
+  (prn "sum-buttons")
+  (reduce #(let [clicked (fx/sub context ::clicked)]
+             (prn "clicked" clicked)
+             (+ %1 (get clicked %2 0)))
           0
           (fx/sub context ::ids)))
 
@@ -50,10 +58,10 @@
                   [{:fx/type :h-box
                     :children [{:fx/type :button
                                 :on-action {:event/type ::less-buttons}
-                                :text (str "Less button panes")}
+                                :text (str "Less buttons")}
                                {:fx/type :button
                                 :on-action {:event/type ::more-buttons}
-                                :text (str "More button panes")}]}
+                                :text (str "More buttons")}]}
                    {:fx/type :label
                     :text (str "Sum: " (fx/sub context sum-buttons))}
                    {:fx/type buttons}]}}})

@@ -149,13 +149,18 @@ Possible reasons:
     (some #(contains? s2 %) s1)))
 
 (defn- invalidate-cache [cache old-m new-m]
+  ;(prn (gensym) "invalidate-cache" old-m new-m)
   (let [changed-keys (into #{}
                            (comp (mapcat keys)
                                  (distinct)
                                  (remove #(= (old-m %) (new-m %))))
                            [old-m new-m])
         changed-sub-ids (into #{} (map vector) changed-keys)]
+    ;(prn "changed-keys" changed-keys)
+    ;(prn "changed-sub-ids" changed-sub-ids)
     (reduce (fn [acc [k v]]
+              ;(prn "k" k)
+              ;(prn "v" v)
               (let [direct-deps (::direct-deps v)]
                 (cond
                   (= ::context direct-deps)

@@ -84,6 +84,42 @@
           (context/sub context-3 template) => "Привет, %s!"
           @*template-call-counter => 2)))))
 
+(deftest subscription-deps-are-updated-on-recalculation-v2
+  (let [*sum-buttons-counter (atom 0)
+        sum-buttons (fn [context]
+                      (swap! *sum-buttons-counter inc)
+                      (reduce #(+ %1 (get (context/sub context :values) %2 0))
+                              0
+                              (context/sub context :ids)))
+        template (fn [context]
+                   (context/sub context sum-buttons))
+        create-id #(update %1 :ids conj %2)
+        inc-value #(update-in %1 [:values %2] (fnil inc 0))
+
+        context (context/create {:ids []
+                                 :values {}}
+                                identity)
+        _ (facts
+            "Template depends on [:ids] subscription"
+            (context/sub context template) => 0
+            @*sum-buttons-counter => 1)
+        context (context/swap context create-id :a)
+        _ (facts
+            "After changing template depends on [:ids] and [:values] subscriptions"
+            (context/sub context template) => 0
+            @*sum-buttons-counter => 2)
+        context (context/swap context inc-value :a)
+        _ (facts
+            "Since since template subscribes to :values, it is updated"
+            (context/sub context template) => 1
+            @*sum-buttons-counter => 3)
+        context (context/swap context create-id :b)
+        _ (facts
+            "Since since template subscribes to :values, it is updated"
+            (context/sub context template) => 1
+            @*sum-buttons-counter => 4)
+        ]))
+
 (deftest creating-derived-contexts-inside-subs-add-dependency-on-context-itself
   (let [*sub-context-call-counter (atom 0)
         context (context/create {:db 1} identity)
