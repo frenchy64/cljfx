@@ -28,7 +28,7 @@
 (defmethod handler ::more-button-panes
   [{:keys [fx/context id] :as m}]
   (if id
-    {:context (fx/swap-context context update ::dynamic-ids conj id)}
+    {:context (fx/swap-context context update ::dynamic-ids (fnil conj []) id)}
     ; generate a button id by elaborately calling
     ; an effect that calls this handler again
     {::gen-button-pane-id (select-keys m [:event/type])}))

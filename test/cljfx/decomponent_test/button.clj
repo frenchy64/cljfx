@@ -26,12 +26,12 @@
 
 (def decomponent
   {:effects {::log-click (fn [{:keys [clicked fx/path]} dispatch!]
+                           {:pre [path]}
                            (prn path "clicked!" clicked))}
    :event-handler-map {::clicked
-                       (fn [{:keys [fx/context fx/path clicked]}]
+                       (fn [{:keys [fx/context fx/path clicked] :as m}]
                          {:pre [path]}
-                         (prn "button path" path)
                          {:context (fx/swap-context context update-in 
                                                     (conj path ::clicked)
                                                     (fnil inc 0))
-                          ::log-click {:clicked clicked}})}})
+                          ::log-click (select-keys m [:clicked :fx/path])})}})
