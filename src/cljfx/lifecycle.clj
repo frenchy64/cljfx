@@ -489,15 +489,26 @@
   (with-meta
     [::context-fn->dynamic]
     {`create (fn [_ desc opts]
-               (create dynamic (sub-context-fn desc opts)
-                       (cond-> opts
-                         (:fx/extend-path desc) (update :fx/path conj (:fx/extend-path desc)))))
+               (with-meta
+                 {:desc desc
+                  :child (create dynamic (sub-context-fn desc opts)
+                                 (cond-> opts
+                                   (:fx/extend-path desc) (update :fx/path conj (:fx/extend-path desc))))}
+                 {`component/instance #(-> % :child component/instance)}))
      `advance (fn [_ component desc opts]
-                (advance dynamic component (sub-context-fn desc opts)
-                         (cond-> opts
-                           (:fx/extend-path desc) (update :fx/path conj (:fx/extend-path desc)))))
-     `delete (fn [_ component opts]
-               (delete dynamic component opts))}))
+                (-> component
+                    (assoc :desc desc)
+                    (update :child
+                            #(advance dynamic % (sub-context-fn desc opts)
+                                      (cond-> opts
+                                        (:fx/extend-path desc) (update :fx/path conj (:fx/extend-path desc)))))))
+     `delete (fn [_ {:keys [desc child]} opts]
+               (delete dynamic child opts)
+               (when-let [extend-path (:fx/extend-path desc)]
+                 (when-let [delete-decomponent (:fx.opt/delete-decomponent opts)]
+                   (let [path (:fx/path opts)
+                         full-path (conj path extend-path)]
+                     (delete-decomponent full-path)))))}))
 
 (defn wrap-on-instance-lifecycle [lifecycle]
   (with-meta

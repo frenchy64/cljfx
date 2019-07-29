@@ -6,12 +6,6 @@
   (:require [cljfx.api :as fx]
             [cljfx.decomponent-test.button-pane :as button-pane]))
 
-;; Initial State
-
-(defn init-state [] {::dynamic-ids []
-                     ::flip-layout false
-                     ::decomponents {}})
-
 (defn button-pane-path [id]
   [::button-pane id])
 
@@ -66,7 +60,6 @@
                     (fx/sub context ::dynamic-ids))}})
 
 (defn sum-clicks [context path]
-  (prn "sum-clicks top-level" path)
   (reduce #(+ %1 (fx/sub context button-pane/sum-clicks %2))
           0
           (fx/sub context all-button-pane-paths path)))
@@ -103,7 +96,7 @@
   (fx/unmount-renderer *context (:renderer app)))
 
 (def *context
-  (atom (fx/create-context (init-state))))
+  (atom (fx/create-context {})))
 
 (def app
   (fx/create-app *context

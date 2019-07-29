@@ -7,11 +7,6 @@
 ;; Idea: flatten trees into a :dc/decomponents map at
 ;; the top-level of the tree, which is a (Map Path DecomponentState).
 
-;; Initial State
-
-; needs to be updated with root path
-(defn init-state [] {::dynamic-ids []})
-
 ;; Decomponent paths
 
 (defn- sub-in [context ks]
@@ -109,7 +104,6 @@
 ;; Decomponent
 
 (def decomponent
-  {:init-state (init-state)
-   :decomponents `#{button/decomponent}
+  {:decomponents `#{button/decomponent}
    :effects effects
    :event-handler-map (dissoc (methods handler) :default)})

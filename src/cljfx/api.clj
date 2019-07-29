@@ -447,14 +447,13 @@
     (defalias Decomponent
       (HMap :optional {:effects EffectsMap
                        :co-effects CoEffectsMap
-                       :init-state StateMap
                        :event-handler-map (Map EventType EventHandler)
                        :decomponents (Set QualSym)
                        :swap-state-on-render-error [State Throwable -> State]}))
     ```
 
     Each component is installed as if included in the main app, so the keys
-    of each :effects, :init-state, etc., map should be unique (eg., namespaced keywords).
+    of each :effects, :co-effects, etc., map should be unique (eg., namespaced keywords).
   - `:decomponent-root` - A fully-qualified keyword. Will be used as a state key in *context
     to house all local state in decomponents.
     Default: `:cljfx.decomponent/decomponents`
@@ -469,13 +468,15 @@
                       renderer-middleware
                       renderer-error-handler
                       decomponents
-                      decomponent-root]
+                      decomponent-root
+                      delete-decomponent]
                :or {co-effects {}
                     effects {}
                     async-agent-options {}
                     renderer-middleware identity
                     renderer-error-handler renderer/default-error-handler
-                    decomponent-root ::decomponent/decomponents}
+                    decomponent-root ::decomponent/decomponents
+                    delete-decomponent decomponent/default-delete-decomponent}
                :as opt}]
   (let [rdecomponent (some-> decomponents decomponent/resolve-decomponents)
         effects (cond-> effects
@@ -488,8 +489,6 @@
         event-handler (cond-> event-handler
                         rdecomponent (decomponent/combine-event-handler
                                        (:event-handler-map rdecomponent)))
-        ;; hack?
-        _ (some->> (:init-state rdecomponent) (swap! *context context/swap merge))
         handler (-> event-handler
                     (event-handler/wrap-co-effects
                       (defaults/fill-co-effects co-effects *context))
@@ -505,6 +504,7 @@
                                  renderer-middleware)
                    :opts {:fx.opt/map-event-handler handler
                           :fx.opt/decomponent-root decomponent-root
+                          :fx.opt/delete-decomponent (delete-decomponent *context)
                           :fx.opt/type->lifecycle #(or (keyword->lifecycle %)
                                                        (fn->lifecycle-with-context %))})]
     (mount-renderer *context renderer)

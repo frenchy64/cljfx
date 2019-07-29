@@ -25,8 +25,7 @@
      :text (str "Clicked x" clicked)}))
 
 (def decomponent
-  {:init-state {::button {}}
-   :effects {::log-click (fn [{:keys [clicked fx/path]} dispatch!]
+  {:effects {::log-click (fn [{:keys [clicked fx/path]} dispatch!]
                            (prn path "clicked!" clicked))}
    :event-handler-map {::clicked
                        (fn [{:keys [fx/context fx/path clicked]}]

@@ -31,6 +31,8 @@
   [handler *context swap-state-on-render-error-fns]
   (if (seq swap-state-on-render-error-fns)
     (let [handlers (fn [e]
+                     ;TODO can this be generalized to simulate an "event" that returns
+                     ; an effects map?
                      (swap! *context context/swap
                             (fn [state]
                               (reduce #(%2 %1 e) state swap-state-on-render-error-fns))))]
@@ -49,7 +51,6 @@
   (defalias Decomponent
     (HMap :optional {:effects EffectsMap
                      :co-effects CoEffectsMap
-                     :init-state StateMap
                      :event-handler-map (Map EventType EventHandler)
                      :decomponents (Set QualSym)
                      :swap-state-on-render-error [State Throwable -> State]}))
@@ -57,7 +58,6 @@
   (defalias ResolvedDecomponent
     (HMap :optional {:effects EffectsMap
                      :co-effects CoEffectsMap
-                     :init-state StateMap
                      :event-handler-map (Map EventType EventHandler)
                      :swap-state-on-render-error-fns (Set [State Throwable -> State])}))
 
@@ -70,7 +70,7 @@
     (if (empty? to-process)
       out
       (let [{depends :decomponents
-             :keys [effects co-effects event-handler-map init-state
+             :keys [effects co-effects event-handler-map
                     swap-state-on-render-error]} @(resolve (first to-process))
             dependencies (set/difference (set depends) processed)]
         (recur (-> to-process
@@ -81,6 +81,23 @@
                  effects (update :effects merge effects)
                  co-effects (update :co-effects merge co-effects)
                  event-handler-map (update :event-handler-map merge event-handler-map)
-                 init-state (update :init-state merge init-state)
                  swap-state-on-render-error (update :swap-state-on-render-error-fns (fnil conj #{})
                                                     swap-state-on-render-error)))))))
+
+(defn- dissoc-in [m path]
+  (if (empty? path)
+    m
+    (let [[f & n] path]
+      (if n
+        (if (contains? m f)
+          (update m f dissoc-in n)
+          m)
+        (dissoc m f)))))
+
+(def default-delete-decomponent
+  (fn [*context]
+    (fn [path]
+      (.start
+        (Thread.
+          (fn []
+            (swap! *context context/swap dissoc-in path)))))))
