@@ -87,6 +87,7 @@
 ; case where a ::context/direct-dep function changes its ::context/key-deps,
 ; but the dep returns the same result, so the outer cache entry is never
 ; evicted and its key-deps is not correctly updated.
+;; TODO test that circular dirty deps don't do unnecessary recalculation
 (deftest direct-dep-changing-its-key-deps-but-returning-same-result-updates-key-dep
   (let [*template-counter (atom 0)
         *parent-child-counter (atom 0)
@@ -106,33 +107,21 @@
             @*parent-child-counter => 1)
         context (context/swap context assoc :parent :parent)
         _ (facts
-            "[template] is marked as dirty, but [parent-child] has same result."
+            "[template] not recalculated because parent-child returns same result"
             (context/sub context template) => nil
-            @*template-counter => 1      ;no recalc because consistent result
-            @*parent-child-counter => 2  ;check dirty
-            )
+            @*template-counter => 1)
+        _ (facts
+            "[parent-child] recalculated because it is a dependency of [template]"
+            @*parent-child-counter => 2)
         context (context/swap context assoc :child :child)
         _ (facts
-            "[template] correctly has #{:parent :child} key deps."
+            "[template] has #{:parent :child} key deps and so is recalculated."
             (context/sub context template) => :child
-            @*template-counter => 2
-            @*parent-child-counter => 3  ;only run one additional time to verify that template cache entry should be evicted
-            )
-        ]))
-
-(deftest circular-dirty-direct-deps-do-minimum-recalculation
-  (let [max-rounds 2
-        *round (atom 0)
-        f (fn f [context]
-            (when (<= (swap! *round inc) max-rounds)
-              (context/sub context f)
-              (context/sub context :anything)))
-        context (context/create {} identity)
+            @*template-counter => 2)
         _ (facts
-            ""
-            (context/sub context f) => nil)
-        ]
-    ))
+            "[parent-child] recalculated exactly once to verify that [template] cache entry should be evicted"
+            @*parent-child-counter => 3)
+        ]))
 
 (deftest creating-derived-contexts-inside-subs-add-dependency-on-context-itself
   (let [*sub-context-call-counter (atom 0)

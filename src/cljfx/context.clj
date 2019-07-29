@@ -66,13 +66,15 @@
     (catch FileNotFoundException _
       identity)))
 
-(defn- assert-not-leaked [cache sub-id]
-  (assert (not (has? cache sub-id))
-          (str (first sub-id) " is attempting to subscribe to bound context which already has value
+(defn- assert-not-leaked [cache sub-id & data-flat]
+  (when (has? cache sub-id)
+    (throw (ex-info 
+             (str (first sub-id) " is attempting to subscribe to bound context which already has value
 
 Possible reasons:
 - you return lazy seq which uses `cljfx.api/sub` while calculating elements
-- you leaked context from subscription function's scope without unbinding it first (call `cljfx.api/unbind-context` on it in that case)")))
+- you leaked context from subscription function's scope without unbinding it first (call `cljfx.api/unbind-context` on it in that case)")
+             (into (apply hash-map data-flat) {:parent-sub-id sub-id})))))
 
 (defn unbind [context]
   (dissoc context ::*direct-deps ::*key-deps ::parent-sub-id))
@@ -99,11 +101,10 @@ Possible reasons:
     (swap! *cache hit sub-id)
     (let [recalc #(swap! *cache miss sub-id (calc-cache-entry context sub-id))]
       (if (has? cache [::dirty sub-id])
-        (if false #_(*processing-dirty* sub-id)
+        (if (*processing-dirty* sub-id)
           (do (swap! *cache evict [::dirty sub-id])
               (recalc))
           (binding [*processing-dirty* (conj *processing-dirty* sub-id)]
-            (prn "*processing-dirty*" *processing-dirty*)
             (sub-from-dirty context *cache cache sub-id)))
         (recalc)))))
 
@@ -153,7 +154,7 @@ Possible reasons:
                   (swap! *key-deps conj k))
                 (get-in context [::m k])))]
     (when *direct-deps
-      (assert-not-leaked cache (::parent-sub-id context))
+      (assert-not-leaked cache (::parent-sub-id context) :child-sub-id sub-id)
       (swap! *direct-deps add-dep sub-id ret))
     ret))
 
