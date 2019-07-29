@@ -84,42 +84,41 @@
           (context/sub context-3 template) => "Привет, %s!"
           @*template-call-counter => 2)))))
 
-(deftest subscription-deps-are-updated-on-recalculation-v2
-  (let [*sum-buttons-counter (atom 0)
-        sum-buttons (fn [context]
-                      (swap! *sum-buttons-counter inc)
-                      (reduce #(+ %1 (get (context/sub context :values) %2 0))
-                              0
-                              (context/sub context :ids)))
+; case where a ::context/direct-dep function changes its ::context/key-deps,
+; but the function returns the same result, so the outer cache entry is never
+; evicted and its key-deps is not correctly updated.
+(deftest direct-dep-changing-its-key-deps-but-returning-same-result-updates-key-dep
+  (let [*template-counter (atom 0)
+        *parent-child-counter (atom 0)
+        parent-child (fn [context]
+                       (swap! *parent-child-counter inc)
+                       (when (context/sub context :parent)
+                         (context/sub context :child)))
         template (fn [context]
-                   (context/sub context sum-buttons))
-        create-id #(update %1 :ids conj %2)
-        inc-value #(update-in %1 [:values %2] (fnil inc 0))
+                   (swap! *template-counter inc)
+                   (context/sub context parent-child))
 
-        context (context/create {:ids []
-                                 :values {}}
-                                identity)
+        context (context/create {} identity)
         _ (facts
-            "Template depends on [:ids] subscription"
-            (context/sub context template) => 0
-            @*sum-buttons-counter => 1)
-        context (context/swap context create-id :a)
+            ""
+            (context/sub context template) => nil
+            @*template-counter => 1
+            @*parent-child-counter => 1
+            )
+        context (context/swap context assoc :parent :parent)
         _ (facts
             "After changing, [template] depends on [:ids] and [:values] subscriptions"
-            (context/sub context template) => 0
-            @*sum-buttons-counter => 2)
-        context (context/swap context inc-value :a)
+            (context/sub context template) => nil
+            @*template-counter => 1     ;no recalc because consistent result
+            @*parent-child-counter => 2  ;check dirty
+            )
+        context (context/swap context assoc :child :child)
         _ (facts
             "Since [template] subscribes to [:values], it is updated"
-            (context/sub context template) => 1
-            @*sum-buttons-counter => 3)
-        #_#_
-        context (context/swap context create-id :b)
-        #_#_
-        _ (facts
-            "Since [template] subscribes to [:ids], it is updated"
-            (context/sub context template) => 1
-            @*sum-buttons-counter => 4)
+            (context/sub context template) => :child  ; bug: returns nil because [template] doesn't (but should) depend on [:child]
+            @*template-counter => 2   ; bug: not called because template does not depend on :child
+            @*parent-child-counter => 3 ; bug: not called because template does not depend on :child
+            )
         ]))
 
 (deftest creating-derived-contexts-inside-subs-add-dependency-on-context-itself
