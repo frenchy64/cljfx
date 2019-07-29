@@ -120,6 +120,20 @@
             )
         ]))
 
+(deftest circular-dirty-direct-deps-do-minimum-recalculation
+  (let [max-rounds 2
+        *round (atom 0)
+        f (fn f [context]
+            (when (<= (swap! *round inc) max-rounds)
+              (context/sub context f)
+              (context/sub context :anything)))
+        context (context/create {} identity)
+        _ (facts
+            ""
+            (context/sub context f) => nil)
+        ]
+    ))
+
 (deftest creating-derived-contexts-inside-subs-add-dependency-on-context-itself
   (let [*sub-context-call-counter (atom 0)
         context (context/create {:db 1} identity)

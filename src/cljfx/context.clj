@@ -92,25 +92,34 @@ Possible reasons:
 
 (declare sub)
 
+(def ^:dynamic *processing-dirty* #{})
+
+(defn- register-cache-entry [context *cache cache sub-id]
+  (if (has? cache sub-id)
+    (swap! *cache hit sub-id)
+    (let [recalc #(swap! *cache miss sub-id (calc-cache-entry context sub-id))]
+      (if (has? cache [::dirty sub-id])
+        (if false #_(*processing-dirty* sub-id)
+          (do (swap! *cache evict [::dirty sub-id])
+              (recalc))
+          (binding [*processing-dirty* (conj *processing-dirty* sub-id)]
+            (prn "*processing-dirty*" *processing-dirty*)
+            (sub-from-dirty context *cache cache sub-id)))
+        (recalc)))))
+
 (defn- sub-from-dirty [context *cache cache sub-id]
   (let [dirty-sub (lookup cache [::dirty sub-id])
-        deps (::direct-deps dirty-sub)
         unbound-context (unbind context)
-        ; verify that all direct dependencies return the same result, and
-        ; update their entries in the cache.
-        ; if successful, `key-deps` is an updated set of key-deps for sub-id.
-        ; otherwise, `key-deps` is :recalc.
         key-deps (reduce
                    (fn [key-deps [dep-id dep-v]]
-                     (let [v (calc-cache-entry unbound-context dep-id)
-                           ;TODO check `has?` and `hit` if present, without extra derefs.
-                           _ (swap! *cache miss dep-id v)]
+                     (let [v (-> (register-cache-entry unbound-context *cache @*cache dep-id)
+                                 (lookup dep-id))]
                        (if (not= dep-v (::value v))
-                         (reduced :recalc)
+                         (reduced nil)
                          (into key-deps (::key-deps v)))))
                    (::key-deps dirty-sub)
-                   deps)]
-    (if (not= :recalc key-deps)
+                   (::direct-deps dirty-sub))]
+    (if key-deps
       (swap! *cache (fn [cache]
                       (-> cache
                           (evict [::dirty sub-id])
@@ -131,19 +140,8 @@ Possible reasons:
         {::keys [*cache *direct-deps *key-deps]} context
         cache @*cache
         ret (if (fn? k)
-              (let [entry (-> (cond
-                                (has? cache sub-id)
-                                (do (swap! *cache hit sub-id)
-                                    ;FIXME why isn't this just a swap?
-                                    cache)
-
-                                (has? cache [::dirty sub-id])
-                                (sub-from-dirty context *cache cache sub-id)
-
-                                :else
-                                (swap! *cache miss sub-id (calc-cache-entry context sub-id)))
+              (let [entry (-> (register-cache-entry context *cache cache sub-id)
                               (lookup sub-id))]
-                (prn "entry" entry)
                 (when *key-deps
                   (swap! *key-deps set/union (::key-deps entry)))
                 (::value entry))
@@ -165,34 +163,25 @@ Possible reasons:
     (some #(contains? s2 %) s1)))
 
 (defn- invalidate-cache [cache old-m new-m]
-  (prn (gensym) "invalidate-cache" old-m new-m)
   (let [changed-keys (into #{}
                            (comp (mapcat keys)
                                  (distinct)
                                  (remove #(= (old-m %) (new-m %))))
                            [old-m new-m])
         changed-sub-ids (into #{} (map vector) changed-keys)]
-    (prn "changed-keys" changed-keys)
-    (prn "changed-sub-ids" changed-sub-ids)
     (reduce (fn [acc [k v]]
-              (prn "k" k)
-              (prn "v" v)
               (let [direct-deps (::direct-deps v)]
                 (cond
                   (= ::context direct-deps)
                   (evict acc k)
 
                   (intersects? changed-sub-ids (set (keys direct-deps)))
-                  (do
-                    (prn "evict changed-sub-ids")
-                    (evict acc k))
+                  (evict acc k)
 
                   (intersects? changed-keys (::key-deps v))
-                  (do 
-                    (prn "evict changed-keys")
-                    (-> acc
-                        (evict k)
-                        (miss [::dirty k] v)))
+                  (-> acc
+                      (evict k)
+                      (miss [::dirty k] v))
 
                   :else
                   acc)))
