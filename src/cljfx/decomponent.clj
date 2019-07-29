@@ -85,14 +85,12 @@
                                                     swap-state-on-render-error)))))))
 
 (defn- dissoc-in [m path]
-  (if (empty? path)
-    m
-    (let [[f & n] path]
-      (if n
-        (if (contains? m f)
-          (update m f dissoc-in n)
-          m)
-        (dissoc m f)))))
+  (if-some [[f & n] (seq path)]
+    (if n
+      (cond-> m
+        (contains? m f) (update f dissoc-in n))
+      (dissoc m f))
+    m))
 
 (def default-delete-decomponent
   (fn [*context]
