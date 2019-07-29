@@ -1,4 +1,4 @@
-(ns cljfx.context-test.context-miss-vector
+(ns cljfx.context-test.context-dirty-entry-updates-key-deps
   (:require [cljfx.api :as fx]))
 
 ;; Event handler

@@ -92,21 +92,9 @@ Possible reasons:
      ::direct-deps @*direct-deps
      ::key-deps @*key-deps}))
 
-(declare sub)
+(declare sub register-cache-entry)
 
 (def ^:dynamic *processing-dirty* #{})
-
-(defn- register-cache-entry [context *cache cache sub-id]
-  (if (has? cache sub-id)
-    (swap! *cache hit sub-id)
-    (let [recalc #(swap! *cache miss sub-id (calc-cache-entry context sub-id))]
-      (if (has? cache [::dirty sub-id])
-        (if (*processing-dirty* sub-id)
-          (do (swap! *cache evict [::dirty sub-id])
-              (recalc))
-          (binding [*processing-dirty* (conj *processing-dirty* sub-id)]
-            (sub-from-dirty context *cache cache sub-id)))
-        (recalc)))))
 
 (defn- sub-from-dirty [context *cache cache sub-id]
   (let [dirty-sub (lookup cache [::dirty sub-id])
@@ -135,6 +123,18 @@ Possible reasons:
   (if (= ::context deps)
     ::context
     (assoc deps k v)))
+
+(defn- register-cache-entry [context *cache cache sub-id]
+  (if (has? cache sub-id)
+    (swap! *cache hit sub-id)
+    (let [recalc #(swap! *cache miss sub-id (calc-cache-entry context sub-id))]
+      (if (has? cache [::dirty sub-id])
+        (if (*processing-dirty* sub-id)
+          (do (swap! *cache evict [::dirty sub-id])
+              (recalc))
+          (binding [*processing-dirty* (conj *processing-dirty* sub-id)]
+            (sub-from-dirty context *cache cache sub-id)))
+        (recalc)))))
 
 (defn sub [context k & args]
   (let [sub-id (apply vector k args)

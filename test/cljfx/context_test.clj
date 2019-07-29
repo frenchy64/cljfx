@@ -88,7 +88,7 @@
 ; but the dep returns the same result, so the outer cache entry is never
 ; evicted and its key-deps is not correctly updated.
 ;; TODO test that circular dirty deps don't do unnecessary recalculation
-(deftest direct-dep-changing-its-key-deps-but-returning-same-result-updates-key-dep
+(deftest dirty-cache-entry-always-updates-its-key-deps
   (let [*template-counter (atom 0)
         *parent-child-counter (atom 0)
         parent-child (fn [context]
