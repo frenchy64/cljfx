@@ -85,7 +85,7 @@
           @*template-call-counter => 2)))))
 
 ; case where a ::context/direct-dep function changes its ::context/key-deps,
-; but the function returns the same result, so the outer cache entry is never
+; but the dep returns the same result, so the outer cache entry is never
 ; evicted and its key-deps is not correctly updated.
 (deftest direct-dep-changing-its-key-deps-but-returning-same-result-updates-key-dep
   (let [*template-counter (atom 0)
@@ -100,24 +100,23 @@
 
         context (context/create {} identity)
         _ (facts
-            ""
+            "[template] directly depends on [parent-child]. Both have key deps #{:parent}"
             (context/sub context template) => nil
             @*template-counter => 1
-            @*parent-child-counter => 1
-            )
+            @*parent-child-counter => 1)
         context (context/swap context assoc :parent :parent)
         _ (facts
-            "After changing, [template] depends on [:ids] and [:values] subscriptions"
+            "[template] is marked as dirty, but [parent-child] has same result."
             (context/sub context template) => nil
             @*template-counter => 1      ;no recalc because consistent result
             @*parent-child-counter => 2  ;check dirty
             )
         context (context/swap context assoc :child :child)
         _ (facts
-            "Since [template] subscribes to [:values], it is updated"
+            "[template] correctly has #{:parent :child} key deps."
             (context/sub context template) => :child
             @*template-counter => 2
-            @*parent-child-counter => 4 ; inefficient, sub-from-dirty could update cache to avoid extra call
+            @*parent-child-counter => 3  ;only run one additional time to verify that template cache entry should be evicted
             )
         ]))
 

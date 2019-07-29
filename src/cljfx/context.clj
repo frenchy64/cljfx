@@ -96,24 +96,25 @@ Possible reasons:
   (let [dirty-sub (lookup cache [::dirty sub-id])
         deps (::direct-deps dirty-sub)
         unbound-context (unbind context)
-        ret (reduce (fn [ret dep-id]
-                      (let [entry (calc-cache-entry unbound-context dep-id)]
-                        (if (not= (get deps dep-id) (::value entry))
-                          (do ; TODO update cache
-                              (reduced :recalc))
-                          (if (not (every? (::key-deps dirty-sub) (::key-deps entry)))
-                            (do ; FIXME update cache?
-                                :keep-dirty)
-                            ret))))
-                    :miss
-                    (keys deps))]
-    (case ret 
-      :keep-dirty cache
-      :miss (swap! *cache (fn [cache]
-                            (-> cache
-                                (evict [::dirty sub-id])
-                                (miss sub-id dirty-sub))))
-      :recalc
+        ; verify that all direct dependencies return the same result, and
+        ; update their entries in the cache.
+        ; if successful, `key-deps` is an updated set of key-deps for sub-id.
+        ; otherwise, `key-deps` is :recalc.
+        key-deps (reduce
+                   (fn [key-deps [dep-id dep-v]]
+                     (let [v (calc-cache-entry unbound-context dep-id)
+                           ;TODO check `has?` and `hit` if present, without extra derefs.
+                           _ (swap! *cache miss dep-id v)]
+                       (if (not= dep-v (::value v))
+                         (reduced :recalc)
+                         (into key-deps (::key-deps v)))))
+                   (::key-deps dirty-sub)
+                   deps)]
+    (if (not= :recalc key-deps)
+      (swap! *cache (fn [cache]
+                      (-> cache
+                          (evict [::dirty sub-id])
+                          (miss sub-id (assoc dirty-sub ::key-deps key-deps)))))
       (let [v (calc-cache-entry context sub-id)]
         (swap! *cache (fn [cache]
                         (-> cache
@@ -133,6 +134,7 @@ Possible reasons:
               (let [entry (-> (cond
                                 (has? cache sub-id)
                                 (do (swap! *cache hit sub-id)
+                                    ;FIXME why isn't this just a swap?
                                     cache)
 
                                 (has? cache [::dirty sub-id])
