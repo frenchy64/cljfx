@@ -39,9 +39,7 @@
                       (fx/sub context ::ids))}}))
 
 (defn sum-buttons [context]
-  (prn "sum-buttons")
   (reduce #(let [clicked (fx/sub context ::clicked)]
-             (prn "clicked" clicked)
              (+ %1 (get clicked %2 0)))
           0
           (fx/sub context ::ids)))
