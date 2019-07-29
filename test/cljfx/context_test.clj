@@ -109,15 +109,15 @@
         _ (facts
             "After changing, [template] depends on [:ids] and [:values] subscriptions"
             (context/sub context template) => nil
-            @*template-counter => 1     ;no recalc because consistent result
+            @*template-counter => 1      ;no recalc because consistent result
             @*parent-child-counter => 2  ;check dirty
             )
         context (context/swap context assoc :child :child)
         _ (facts
             "Since [template] subscribes to [:values], it is updated"
-            (context/sub context template) => :child  ; bug: returns nil because [template] doesn't (but should) depend on [:child]
-            @*template-counter => 2   ; bug: not called because template does not depend on :child
-            @*parent-child-counter => 3 ; bug: not called because template does not depend on :child
+            (context/sub context template) => :child
+            @*template-counter => 2
+            @*parent-child-counter => 4 ; inefficient, sub-from-dirty could update cache to avoid extra call
             )
         ]))
 

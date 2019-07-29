@@ -95,12 +95,25 @@ Possible reasons:
 (defn- sub-from-dirty [context *cache cache sub-id]
   (let [dirty-sub (lookup cache [::dirty sub-id])
         deps (::direct-deps dirty-sub)
-        unbound-context (unbind context)]
-    (if (every? #(= (get deps %) (apply sub unbound-context %)) (keys deps))
-      (swap! *cache (fn [cache]
-                      (-> cache
-                          (evict [::dirty sub-id])
-                          (miss sub-id dirty-sub))))
+        unbound-context (unbind context)
+        ret (reduce (fn [ret dep-id]
+                      (let [entry (calc-cache-entry unbound-context dep-id)]
+                        (if (not= (get deps dep-id) (::value entry))
+                          (do ; TODO update cache
+                              (reduced :recalc))
+                          (if (not (every? (::key-deps dirty-sub) (::key-deps entry)))
+                            (do ; FIXME update cache?
+                                :keep-dirty)
+                            ret))))
+                    :miss
+                    (keys deps))]
+    (case ret 
+      :keep-dirty cache
+      :miss (swap! *cache (fn [cache]
+                            (-> cache
+                                (evict [::dirty sub-id])
+                                (miss sub-id dirty-sub))))
+      :recalc
       (let [v (calc-cache-entry context sub-id)]
         (swap! *cache (fn [cache]
                         (-> cache
@@ -128,6 +141,7 @@ Possible reasons:
                                 :else
                                 (swap! *cache miss sub-id (calc-cache-entry context sub-id)))
                               (lookup sub-id))]
+                (prn "entry" entry)
                 (when *key-deps
                   (swap! *key-deps set/union (::key-deps entry)))
                 (::value entry))
@@ -149,30 +163,34 @@ Possible reasons:
     (some #(contains? s2 %) s1)))
 
 (defn- invalidate-cache [cache old-m new-m]
-  ;(prn (gensym) "invalidate-cache" old-m new-m)
+  (prn (gensym) "invalidate-cache" old-m new-m)
   (let [changed-keys (into #{}
                            (comp (mapcat keys)
                                  (distinct)
                                  (remove #(= (old-m %) (new-m %))))
                            [old-m new-m])
         changed-sub-ids (into #{} (map vector) changed-keys)]
-    ;(prn "changed-keys" changed-keys)
-    ;(prn "changed-sub-ids" changed-sub-ids)
+    (prn "changed-keys" changed-keys)
+    (prn "changed-sub-ids" changed-sub-ids)
     (reduce (fn [acc [k v]]
-              ;(prn "k" k)
-              ;(prn "v" v)
+              (prn "k" k)
+              (prn "v" v)
               (let [direct-deps (::direct-deps v)]
                 (cond
                   (= ::context direct-deps)
                   (evict acc k)
 
                   (intersects? changed-sub-ids (set (keys direct-deps)))
-                  (evict acc k)
+                  (do
+                    (prn "evict changed-sub-ids")
+                    (evict acc k))
 
                   (intersects? changed-keys (::key-deps v))
-                  (-> acc
-                      (evict k)
-                      (miss [::dirty k] v))
+                  (do 
+                    (prn "evict changed-keys")
+                    (-> acc
+                        (evict k)
+                        (miss [::dirty k] v)))
 
                   :else
                   acc)))
