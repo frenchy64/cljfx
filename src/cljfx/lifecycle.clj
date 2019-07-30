@@ -124,10 +124,10 @@
   (cond
     (map? desc)
     (let [map-event-handler (:fx.opt/map-event-handler opts)
-          path (:fx/path opts)]
+          root (:fx/root opts)]
       #(when-not *in-progress?*
          (map-event-handler (assoc desc :fx/event %
-                                   :fx/path path))))
+                                   :fx/root root))))
 
     (fn? desc)
     #(when-not *in-progress?*
@@ -451,7 +451,7 @@
      `delete (fn [_ component opts]
                (delete lifecycle component opts))}))
 
-(defn init-path [{:keys [fx.opt/decomponent-root]}]
+(defn init-root [{:keys [fx.opt/decomponent-root]}]
   [(or decomponent-root ::decomponents)])
 
 (defn wrap-context-desc [lifecycle]
@@ -461,54 +461,39 @@
                (with-meta
                  {:context desc
                   :child (create lifecycle desc (assoc opts :fx/context desc
-                                                       :fx/path (init-path opts)))}
+                                                       :fx/root (init-root opts)))}
                  {`component/instance #(-> % :child component/instance)}))
      `advance (fn [_ component desc opts]
                 (-> component
                     (assoc :context desc)
                     (update :child #(advance lifecycle % desc (assoc opts :fx/context desc
-                                                                     :fx/path (init-path opts))))))
+                                                                     :fx/root (init-root opts))))))
      `delete (fn [_ component opts]
                (context/clear-cache! (:context component))
                (delete lifecycle (:child component) opts))}))
 
-(defn- call-context-fn [context desc path]
+(defn- call-context-fn [context desc root]
   ((:fx/type desc) (-> desc
-                       (dissoc :fx/type :fx/extend-path)
-                       (assoc :fx/context context
-                              :fx/path (if-let [e (find desc :fx/extend-path)]
-                                         (conj path (val e))
-                                         path)))))
+                       (dissoc :fx/type)
+                       (assoc :fx/context context)
+                       (update :fx/root #(or % root)))))
 
 (defn- sub-context-fn [desc opts]
   (let [context (:fx/context opts)
-        path (:fx/path opts)]
-    (context/sub context call-context-fn desc path)))
+        root (:fx/root opts)]
+    (context/sub context call-context-fn desc root)))
 
 (def context-fn->dynamic
   (with-meta
     [::context-fn->dynamic]
     {`create (fn [_ desc opts]
-               (with-meta
-                 {:desc desc
-                  :child (create dynamic (sub-context-fn desc opts)
-                                 (cond-> opts
-                                   (:fx/extend-path desc) (update :fx/path conj (:fx/extend-path desc))))}
-                 {`component/instance #(-> % :child component/instance)}))
+               (create dynamic (sub-context-fn desc opts)
+                       (update opts :fx/root #(:fx/root desc %))))
      `advance (fn [_ component desc opts]
-                (-> component
-                    (assoc :desc desc)
-                    (update :child
-                            #(advance dynamic % (sub-context-fn desc opts)
-                                      (cond-> opts
-                                        (:fx/extend-path desc) (update :fx/path conj (:fx/extend-path desc)))))))
-     `delete (fn [_ {:keys [desc child]} opts]
-               (delete dynamic child opts)
-               (when-let [extend-path (:fx/extend-path desc)]
-                 (when-let [delete-decomponent (:fx.opt/delete-decomponent opts)]
-                   (let [path (:fx/path opts)
-                         full-path (conj path extend-path)]
-                     (delete-decomponent full-path)))))}))
+                (advance dynamic component (sub-context-fn desc opts)
+                         (update opts :fx/root #(:fx/root desc %))))
+     `delete (fn [_ component opts]
+               (delete dynamic component opts))}))
 
 (defn wrap-on-instance-lifecycle [lifecycle]
   (with-meta

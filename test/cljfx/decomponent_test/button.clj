@@ -7,31 +7,32 @@
   {:pre [((every-pred vector? seq) ks)]}
   (get-in (fx/sub context (first ks)) (rest ks)))
 
-(defn get-clicked [context path]
-  {:pre [(vector? path)]}
-  (or (fx/sub context sub-in (conj path ::clicked))
+(defn get-clicked [context root]
+  {:pre [(vector? root)]}
+  (or (fx/sub context sub-in (conj root ::clicked))
       0))
 
 ;; Views
 
-(defn button-with-state
-  "Use this view to show a button"
-  [{:keys [fx/context fx/path] :as m}]
-  {:pre [path]}
-  (let [clicked (fx/sub context get-clicked path)]
+(defn view
+  "Main view to show a button with internal state."
+  [{:keys [fx/context fx/root] :as m}]
+  (let [clicked (fx/sub context get-clicked root)]
     {:fx/type :button
+     ; :fx/root implicitly passed to events
      :on-action {:event/type ::clicked
                  :clicked clicked}
      :text (str "Clicked x" clicked)}))
 
 (def decomponent
-  {:effects {::log-click (fn [{:keys [clicked fx/path]} dispatch!]
-                           {:pre [path]}
-                           (prn path "clicked!" clicked))}
+  {:effects {::log-click (fn [{:keys [clicked fx/root]} dispatch!]
+                           {:pre [root]}
+                           (prn root "clicked!" clicked))}
    :event-handler-map {::clicked
-                       (fn [{:keys [fx/context fx/path clicked] :as m}]
-                         {:pre [path]}
+                       (fn [{:keys [fx/context fx/root clicked] :as m}]
+                         {:pre [root]}
                          {:context (fx/swap-context context update-in 
-                                                    (conj path ::clicked)
+                                                    (conj root ::clicked)
                                                     (fnil inc 0))
-                          ::log-click (select-keys m [:clicked :fx/path])})}})
+                          ; Note: :fx/root must be passed manually to effects
+                          ::log-click (select-keys m [:clicked :fx/root])})}})

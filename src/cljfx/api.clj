@@ -468,15 +468,13 @@
                       renderer-middleware
                       renderer-error-handler
                       decomponents
-                      decomponent-root
-                      delete-decomponent]
+                      decomponent-root]
                :or {co-effects {}
                     effects {}
                     async-agent-options {}
                     renderer-middleware identity
                     renderer-error-handler renderer/default-error-handler
-                    decomponent-root ::decomponent/decomponents
-                    delete-decomponent decomponent/default-delete-decomponent}
+                    decomponent-root ::decomponent/decomponents}
                :as opt}]
   (let [rdecomponent (some-> decomponents decomponent/resolve-decomponents)
         effects (cond-> effects
@@ -504,7 +502,6 @@
                                  renderer-middleware)
                    :opts {:fx.opt/map-event-handler handler
                           :fx.opt/decomponent-root decomponent-root
-                          :fx.opt/delete-decomponent (delete-decomponent *context)
                           :fx.opt/type->lifecycle #(or (keyword->lifecycle %)
                                                        (fn->lifecycle-with-context %))})]
     (mount-renderer *context renderer)

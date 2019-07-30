@@ -83,19 +83,3 @@
                  event-handler-map (update :event-handler-map merge event-handler-map)
                  swap-state-on-render-error (update :swap-state-on-render-error-fns (fnil conj #{})
                                                     swap-state-on-render-error)))))))
-
-(defn- dissoc-in [m path]
-  (if-some [[f & n] (seq path)]
-    (if n
-      (cond-> m
-        (contains? m f) (update f dissoc-in n))
-      (dissoc m f))
-    m))
-
-(def default-delete-decomponent
-  (fn [*context]
-    (fn [path]
-      (.start
-        (Thread.
-          (fn []
-            (swap! *context context/swap dissoc-in path)))))))
