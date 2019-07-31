@@ -16,19 +16,27 @@
   [{:keys [fx/context] :as m}]
   (let [button-pane-id (create-pane-id)]
     {:context (-> context
-                  (fx/swap-context assoc-in [::panes button-pane-id] {:clicked 0})
+                  (fx/swap-context assoc-in [::panes button-pane-id] {:clicks 0})
                   (fx/swap-context update ::pane-order (fnil conj []) button-pane-id))}))
+
+(defn- pane-clicks [context id]
+  (-> (fx/sub context ::panes)
+      (get-in [id :clicks] 0)))
 
 (defmethod handler ::less-button-panes
   [{:keys [fx/context] :as m}]
-  (let [pane-order (fx/sub context ::pane-order)
-        new-pane-order (if (seq pane-order)
-                         (pop pane-order)
+  (let [[old-pane-order removed-pane] ((juxt identity peek) (fx/sub context ::pane-order))
+        new-pane-order (if (seq old-pane-order)
+                         (pop old-pane-order)
                          [])]
+    (prn "::less-button-panes" (fx/sub context pane-clicks removed-pane)
+         removed-pane (fx/sub context ::panes))
     {:context (cond-> (fx/swap-context context assoc ::pane-order new-pane-order)
-                (seq pane-order)
-                (-> (fx/swap-context update ::decomponents dissoc (peek pane-order))
-                    (fx/swap-context update ::panes dissoc (peek pane-order))))}))
+                removed-pane
+                (-> (fx/swap-context update ::decomponents dissoc removed-pane)
+                    (fx/swap-context update ::panes dissoc removed-pane)
+                    (fx/swap-context update ::total-clicks (fnil - 0)
+                                     (fx/sub context pane-clicks removed-pane))))}))
 
 (defmethod handler ::flip-layout
   [{:keys [fx/context] :as m}]
@@ -39,7 +47,7 @@
   {:pre [pane-id]}
   (prn "::clicked demo")
   {:context (-> context
-                (fx/swap-context update-in [::panes pane-id :clicked] (fnil inc 0))
+                (fx/swap-context update-in [::panes pane-id :clicks] (fnil inc 0))
                 (fx/swap-context update ::total-clicks (fnil inc 0)))})
 
 (defmethod handler :default
@@ -47,11 +55,6 @@
   (println "No handler: " (:event/type m)))
 
 ;; Views
-
-(defn- clicked-event [root pane-id]
-  {:event/type ::clicked
-   :fx/root root
-   :pane-id pane-id})
 
 (defn dynamic-button-panes [{:keys [fx/context fx/root]}]
   {:fx/type :scroll-pane
@@ -62,7 +65,9 @@
     :children (mapv #(do
                        {:fx/type button-pane/view
                         :fx/root (into root [::decomponents %])
-                        :on-clicked (clicked-event root %)})
+                        :on-clicked {:event/type ::clicked
+                                     :fx/root root
+                                     :pane-id %}})
                     (fx/sub context ::pane-order))}})
 
 (defn total-clicks-view [{:keys [fx/context] :as m}]
