@@ -138,6 +138,7 @@
 (defn- create-event-handler-component [desc opts]
   (with-meta {:desc desc
               :fx.opt/map-event-handler (:fx.opt/map-event-handler opts)
+              :fx/root (some :fx/root [desc opts])
               :value (make-handler-fn desc opts)}
              {`component/instance :value}))
 
@@ -147,10 +148,11 @@
     {`create (fn [_ desc opts]
                (create-event-handler-component desc opts))
      `advance (fn [_ component desc opts]
-                ;FIXME need more conditions here for rooted contexts?
                 (if (and (= desc (:desc component))
                          (= (:fx.opt/map-event-handler component)
-                            (:fx.opt/map-event-handler opts)))
+                            (:fx.opt/map-event-handler opts))
+                         (= (:fx/root component)
+                            (some :fx/root [desc opts])))
                   component
                   (create-event-handler-component desc opts)))
      `delete (fn [_ _ _])}))

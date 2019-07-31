@@ -29,7 +29,8 @@
 
 (def ^:private event-handler-map
   {::more-buttons
-   (fn [{:keys [fx/context button-id] :as m}]
+   (fn [{:keys [fx/context button-id fx/root] :as m}]
+     (prn "::more-buttons" root)
      (if button-id
        (do
          (assert (keyword? button-id))
@@ -143,13 +144,17 @@
     (atom (fx/create-context {})))
 
   (def app
-    (let [ids (take 3 (repeatedly gensym))]
+    (let [gen-ids #(vec (take 3 (repeatedly gensym)))
+          _ (swap! *context fx/swap-context assoc ::ids (gen-ids))]
       (fx/create-app *context
                      :decomponents `#{decomponent}
-                     :event-handler #(if (fn? %)
-                                       (%)
+                     :event-handler #(case (:event/type %)
+                                       ::try-me-reset-buttons {:context (-> (:fx/context %)
+                                                                            (fx/swap-context assoc ::ids (gen-ids))
+                                                                            (fx/swap-context dissoc ::decomponents))}
                                        (println "No handler: " (:event/type %)))
-                     :desc-fn (fn [{:keys [fx/context]}]
+                     :desc-fn (fn [context]
+                                (prn "context keys" (-> context keys vec))
                                 {:fx/type :stage
                                  :showing true
                                  :always-on-top true
@@ -161,10 +166,14 @@
                                                 :fit-to-height true
                                                 :content
                                                 {:fx/type :h-box
-                                                 :children (mapv #(do
-                                                                    {:fx/type view
-                                                                     :fx/root [%]})
-                                                                 ids)}}}})))))
+                                                 :children (cons
+                                                             {:fx/type :button
+                                                              :text "Reset"
+                                                              :on-action {:event/type ::try-me-reset-buttons}}
+                                                             (mapv #(do
+                                                                      {:fx/type view
+                                                                       :fx/root [::decomponents %]})
+                                                                   (fx/sub context ::ids)))}}}})))))
 
 (comment
   (try-me))
