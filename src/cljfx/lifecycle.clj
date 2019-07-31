@@ -124,10 +124,9 @@
   (cond
     (map? desc)
     (let [map-event-handler (:fx.opt/map-event-handler opts)
-          root (:fx/root opts)]
+          desc (update desc :fx/root #(or % (:fx/root opts)))]
       #(when-not *in-progress?*
-         (map-event-handler (assoc desc :fx/event %
-                                   :fx/root root))))
+         (map-event-handler (assoc desc :fx/event %))))
 
     (fn? desc)
     #(when-not *in-progress?*
@@ -148,6 +147,7 @@
     {`create (fn [_ desc opts]
                (create-event-handler-component desc opts))
      `advance (fn [_ component desc opts]
+                ;FIXME need more conditions here for rooted contexts?
                 (if (and (= desc (:desc component))
                          (= (:fx.opt/map-event-handler component)
                             (:fx.opt/map-event-handler opts)))

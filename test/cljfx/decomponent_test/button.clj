@@ -12,7 +12,7 @@
     (cond->
       {:context (fx/swap-context context update ::clicked (fnil inc 0))
        ; Note: :fx/root must be passed manually to effects
-       ::log-click (select-keys m [:clicked :fx/root])}
+       ::log-click (select-keys m [:clicked])}
       on-action (assoc :dispatch (assoc on-action :total-clicked clicked)))))
 
 ;; Views
@@ -20,20 +20,16 @@
 (defn view
   "Main view to show a button with internal state."
   [{:keys [fx/context fx/root on-action] :as m}]
-  (prn "root" root)
-  (prn "context root" (:cljfx.context/root context))
   (let [clicked (or (fx/sub context ::clicked) 0)]
     {:fx/type :button
-     ; :fx/root implicitly passed to events
      :on-action {:event/type ::clicked
                  :clicked clicked
                  :on-action on-action}
      :text (str "Clicked x" clicked)}))
 
 (def effects
-  {::log-click (fn [{:keys [clicked fx/root]} dispatch!]
-                 {:pre [root]}
-                 (prn "LOG CLICK:" root "clicked!" clicked)
+  {::log-click (fn [{:keys [clicked]} dispatch!]
+                 ; root automatically forwarded to dispatch!
                  (dispatch! {:event/type ::clicked
                              :from-effect true}))})
 
