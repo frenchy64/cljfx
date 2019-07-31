@@ -37,6 +37,7 @@
 (defmethod handler ::clicked
   [{:keys [fx/context pane-id]}]
   {:pre [pane-id]}
+  (prn "::clicked demo")
   {:context (-> context
                 (fx/swap-context update-in [::panes pane-id :clicked] (fnil inc 0))
                 (fx/swap-context update ::total-clicks (fnil inc 0)))})

@@ -61,23 +61,21 @@
 
 ;; Views
 
-(defn- create-button [{:keys [fx/root id]}]
+(defn- create-button [{:keys [fx/root id on-clicked]}]
   {:fx/type button/view
    :fx/root (into root [::decomponents id])
    :on-action {:event/type ::button-clicked
-               :fx/root root
-               :button-id id}})
+                                   :fx/root root
+                                   :button-id id
+                                   :on-clicked on-clicked}})
 
 (defn- dynamic-buttons-view [{:keys [fx/context fx/root on-clicked]}]
   {:pre [root]}
   {:fx/type :v-box
    :children (mapv #(do
-                      {:fx/type button/view
-                       :fx/root (into root [::decomponents %])
-                       :on-action {:event/type ::button-clicked
-                                   :fx/root root
-                                   :button-id %
-                                   :on-clicked on-clicked}})
+                      {:fx/type create-button
+                       :id %
+                       :on-clicked on-clicked})
                    (fx/sub context ::dynamic-buttons-order))})
 
 (defn- summarize-buttons [{:keys [fx/context fx/root]}]
@@ -95,9 +93,11 @@
                :text "Buttons with static ids"}
               {:fx/type :h-box
                :children [{:fx/type create-button
-                           :id ::first-button}
+                           :id ::first-button
+                           :on-clicked on-clicked}
                           {:fx/type create-button
-                           :id ::second-button}]}
+                           :id ::second-button
+                           :on-clicked on-clicked}]}
               {:fx/type :label
                :text "Buttons with dynamic ids"}
               {:fx/type :h-box
