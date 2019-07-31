@@ -30,7 +30,6 @@
 (def ^:private event-handler-map
   {::more-buttons
    (fn [{:keys [fx/context button-id fx/root] :as m}]
-     (prn "::more-buttons" root)
      (if button-id
        (do
          (assert (keyword? button-id))
@@ -154,7 +153,6 @@
                                                                             (fx/swap-context dissoc ::decomponents))}
                                        (println "No handler: " (:event/type %)))
                      :desc-fn (fn [context]
-                                (prn "context keys" (-> context keys vec))
                                 {:fx/type :stage
                                  :showing true
                                  :always-on-top true
