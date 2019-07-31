@@ -29,8 +29,6 @@
         new-pane-order (if (seq old-pane-order)
                          (pop old-pane-order)
                          [])]
-    (prn "::less-button-panes" (fx/sub context pane-clicks removed-pane)
-         removed-pane (fx/sub context ::panes))
     {:context (cond-> (fx/swap-context context assoc ::pane-order new-pane-order)
                 removed-pane
                 (-> (fx/swap-context update ::decomponents dissoc removed-pane)
@@ -45,7 +43,6 @@
 (defmethod handler ::clicked
   [{:keys [fx/context pane-id]}]
   {:pre [pane-id]}
-  (prn "::clicked demo")
   {:context (-> context
                 (fx/swap-context update-in [::panes pane-id :clicks] (fnil inc 0))
                 (fx/swap-context update ::total-clicks (fnil inc 0)))})

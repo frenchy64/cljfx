@@ -6,10 +6,8 @@
 (defmulti ^:private handler :event/type)
 
 (defmethod handler ::clicked
-  [{:keys [fx/context fx/root clicked on-action from-effect] :as m}]
-  {:pre [root]}
-  (if from-effect
-    (do #_(prn "REBOUND" root))
+  [{:keys [fx/context clicked on-action from-effect] :as m}]
+  (when-not from-effect
     (cond->
       {:context (fx/swap-context context update ::clicked (fnil inc 0))
        ; Note: :fx/root must be passed manually to effects

@@ -17,47 +17,47 @@
 
 ;; Event handler
 
-(defmulti ^:private handler :event/type)
+(defn- button-clicks [context id]
+  (-> (fx/sub context ::buttons)
+      (get-in [id :clicked] 0)))
 
-(defmethod handler ::more-buttons
-  [{:keys [fx/context button-id] :as m}]
-  (if button-id
-    (do
-      (assert (keyword? button-id))
-      {:context (-> context
-                    (fx/swap-context assoc-in [::buttons button-id] {:clicked 0})
-                    ; context preserves root
-                    (fx/swap-context update ::dynamic-buttons-order (fnil conj []) button-id))})
-    ; get an effect to generate a button id
-    {::gen-button-id (select-keys m [:event/type])}))
+(def ^:private event-handler-map
+  {::more-buttons
+   (fn [{:keys [fx/context button-id] :as m}]
+     (if button-id
+       (do
+         (assert (keyword? button-id))
+         {:context (-> context
+                       (fx/swap-context assoc-in [::buttons button-id] {:clicked 0})
+                       ; context preserves root
+                       (fx/swap-context update ::dynamic-buttons-order (fnil conj []) button-id))})
+       ; get an effect to generate a button id
+       {::gen-button-id (select-keys m [:event/type])}))
 
-(defmethod handler ::less-buttons
-  [{:keys [fx/context fx/root] :as m}]
-  {:pre [root]}
-  (let [dynamic-buttons-order (fx/sub context ::dynamic-buttons-order)
-        new-dynamic-buttons-order (if (seq dynamic-buttons-order)
-                                    (pop dynamic-buttons-order)
-                                    [])]
-    {:context (cond-> (fx/swap-context context assoc ::dynamic-buttons-order new-dynamic-buttons-order)
-                ; garbage collect old button state
-                (seq dynamic-buttons-order)
-                (-> (fx/swap-context update ::buttons dissoc (peek dynamic-buttons-order))
-                    (fx/swap-context update ::decomponents dissoc (peek dynamic-buttons-order))))}))
+   ::less-buttons
+   (fn [{:keys [fx/context fx/root] :as m}]
+     {:pre [root]}
+     (let [[old-dynamic-buttons-order removed-button] ((juxt identity peek) (fx/sub context ::dynamic-buttons-order))
+           new-dynamic-buttons-order (if (seq old-dynamic-buttons-order)
+                                       (pop old-dynamic-buttons-order)
+                                       [])]
+       {:context (cond-> (fx/swap-context context assoc ::dynamic-buttons-order new-dynamic-buttons-order)
+                   removed-button
+                   (-> (fx/swap-context update ::buttons dissoc removed-button)
+                       (fx/swap-context update ::decomponents dissoc removed-button)
+                       (fx/swap-context update ::total-clicks (fnil - 0)
+                                        (fx/sub context button-clicks removed-button))))}))
 
-(defmethod handler ::button-clicked
-  [{:keys [fx/context button-id on-clicked] :as m}]
-  {:pre [(keyword? button-id)]}
-  (let [total-clicks ((fnil inc 0) (fx/sub context ::total-clicks))]
-    (cond->
-      {:context (-> context
-                    ; relative-button-root is the buttons _key_ in ::buttons
-                    (fx/swap-context update-in [::buttons button-id :clicked] (fnil inc 0))
-                    (fx/swap-context assoc ::total-clicks total-clicks))}
-      on-clicked (assoc :dispatch (assoc on-clicked :total-clicks total-clicks)))))
-
-(defmethod handler :default
-  [m]
-  (println "No handler: " (:event/type m)))
+   ::button-clicked
+   (fn [{:keys [fx/context button-id on-clicked] :as m}]
+     {:pre [(keyword? button-id)]}
+     (let [total-clicks ((fnil inc 0) (fx/sub context ::total-clicks))]
+       (cond->
+         {:context (-> context
+                       ; relative-button-root is the buttons _key_ in ::buttons
+                       (fx/swap-context update-in [::buttons button-id :clicked] (fnil inc 0))
+                       (fx/swap-context assoc ::total-clicks total-clicks))}
+         on-clicked (assoc :dispatch (assoc on-clicked :total-clicks total-clicks)))))})
 
 ;; Views
 
@@ -65,9 +65,9 @@
   {:fx/type button/view
    :fx/root (into root [::decomponents id])
    :on-action {:event/type ::button-clicked
-                                   :fx/root root
-                                   :button-id id
-                                   :on-clicked on-clicked}})
+               :fx/root root
+               :button-id id
+               :on-clicked on-clicked}})
 
 (defn- dynamic-buttons-view [{:keys [fx/context fx/root on-clicked]}]
   {:pre [root]}
@@ -85,7 +85,8 @@
      :text (str "Sum: " sum)}))
 
 (defn view
-  "Main view of button panes."
+  "Main view of button panes. Requires an :fx/root 
+  and a decomponent dependency on [[decomponent]]."
   [{:keys [fx/root on-clicked]}]
   {:fx/type :v-box
    :spacing 10
@@ -114,13 +115,24 @@
 ;; Decomponent
 
 (def decomponent
+  "Decomponent for button pane. Implementation is private and subject to change."
   {:decomponents `#{button/decomponent}
    :effects effects
-   :event-handler-map (dissoc (methods handler) :default)})
+   :event-handler-map event-handler-map})
 
 ;; Main app
 
 (comment
+
+(defmulti handler :event/type)
+
+(doseq [[k v] (:event-handler-map decomponent)]
+  (.addMethod ^clojure.lang.MultiFn handler k v))
+
+(defmethod handler :default
+  [m]
+  (println "No handler: " (:event/type m)))
+
 (declare *context app)
 
 (when (and (.hasRoot #'*context)
