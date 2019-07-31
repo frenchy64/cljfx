@@ -454,9 +454,6 @@
 
     Each component is installed as if included in the main app, so the keys
     of each :effects, :co-effects, etc., map should be unique (eg., namespaced keywords).
-  - `:decomponent-root` - A fully-qualified keyword. Will be used as a state key in *context
-    to house all local state in decomponents.
-    Default: `:cljfx.decomponent/decomponents`
 
   Note that since events are handled using agents, you'll need to call
   [[clojure.core/shutdown-agents]] to gracefully stop JVM"
@@ -467,14 +464,12 @@
                       async-agent-options
                       renderer-middleware
                       renderer-error-handler
-                      decomponents
-                      decomponent-root]
+                      decomponents]
                :or {co-effects {}
                     effects {}
                     async-agent-options {}
                     renderer-middleware identity
-                    renderer-error-handler renderer/default-error-handler
-                    decomponent-root ::decomponent/decomponents}
+                    renderer-error-handler renderer/default-error-handler}
                :as opt}]
   (let [rdecomponent (some-> decomponents decomponent/resolve-decomponents)
         effects (cond-> effects
@@ -501,7 +496,6 @@
                                  (wrap-map-desc desc-fn)
                                  renderer-middleware)
                    :opts {:fx.opt/map-event-handler handler
-                          :fx.opt/decomponent-root decomponent-root
                           :fx.opt/type->lifecycle #(or (keyword->lifecycle %)
                                                        (fn->lifecycle-with-context %))})]
     (mount-renderer *context renderer)

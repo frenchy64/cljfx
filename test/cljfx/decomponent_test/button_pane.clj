@@ -1,4 +1,10 @@
 (ns cljfx.decomponent-test.button-pane
+  "Decomponent for a pane of dynamically added buttons.
+  
+  [[view]] is the main view.
+  [[decomponent]] is the decomponent configuration.
+  
+  Implementation details of decomponent and views are subject to change."
   (:require [cljfx.api :as fx]
             [cljfx.decomponent-test.button :as button]
             [cljfx.decomponent :as dc]))
@@ -64,10 +70,10 @@
 (defn- create-button [{:keys [fx/root id on-clicked]}]
   {:fx/type button/view
    :fx/root (into root [::decomponents id])
-   :on-action {:event/type ::button-clicked
-               :fx/root root
-               :button-id id
-               :on-clicked on-clicked}})
+   :on-clicked {:event/type ::button-clicked
+                :fx/root root
+                :button-id id
+                :on-clicked on-clicked}})
 
 (defn- dynamic-buttons-view [{:keys [fx/context fx/root on-clicked]}]
   {:pre [root]}
@@ -78,15 +84,19 @@
                        :on-clicked on-clicked})
                    (fx/sub context ::dynamic-buttons-order))})
 
-(defn- summarize-buttons [{:keys [fx/context fx/root]}]
-  {:pre [root]}
+(defn- summarize-buttons [{:keys [fx/context]}]
   (let [sum (or (fx/sub context ::total-clicks) 0)]
     {:fx/type :label
      :text (str "Sum: " sum)}))
 
 (defn view
   "Main view of button panes. Requires an :fx/root 
-  and a decomponent dependency on [[decomponent]]."
+  and a decomponent dependency on [[decomponent]].
+  
+  Takes an optional event :on-clicked that is called when
+  a button is clicked. Event receives an additional
+  :total-clicks entry which is the total clicks so
+  far on this pane."
   [{:keys [fx/root on-clicked]}]
   {:fx/type :v-box
    :spacing 10
@@ -120,18 +130,9 @@
    :effects effects
    :event-handler-map event-handler-map})
 
-;; Main app
+;; Test
 
 (comment
-
-(defmulti handler :event/type)
-
-(doseq [[k v] (:event-handler-map decomponent)]
-  (.addMethod ^clojure.lang.MultiFn handler k v))
-
-(defmethod handler :default
-  [m]
-  (println "No handler: " (:event/type m)))
 
 (declare *context app)
 
@@ -143,17 +144,24 @@
   (atom (fx/create-context {})))
 
 (def app
-  (fx/create-app *context
-    :decomponents `#{decomponent}
-    :decomponent-root ::decomponents
-    :event-handler handler
-    :desc-fn (fn [_]
-               {:fx/type :stage
-                :showing true
-                :always-on-top true
-                :width 600
-                :height 500
-                :scene {:fx/type :scene
-                        :root {:fx/type view
-                               :fx/root [::my-button-pane]}}})))
+  (let [ids (take 3 (repeatedly gensym))]
+    (fx/create-app *context
+      :decomponents `#{decomponent}
+      :event-handler #(println "No handler: " (:event/type %))
+      :desc-fn (fn [_]
+                 {:fx/type :stage
+                  :showing true
+                  :always-on-top true
+                  :width 900
+                  :height 400
+                  :scene {:fx/type :scene
+                          :root {:fx/type :scroll-pane
+                                 :fit-to-width true
+                                 :fit-to-height true
+                                 :content
+                                 {:fx/type :h-box
+                                  :children (mapv #(do
+                                                     {:fx/type view
+                                                      :fx/root [%]})
+                                                  ids)}}}}))))
 )

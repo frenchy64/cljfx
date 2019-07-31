@@ -451,9 +451,7 @@
      `delete (fn [_ component opts]
                (delete lifecycle component opts))}))
 
-(defn init-root [{:keys [fx.opt/decomponent-root]}]
-  (or (some-> decomponent-root vector)
-      []))
+(defn init-root [opts] [])
 
 (defn wrap-context-desc [lifecycle]
   (with-meta
