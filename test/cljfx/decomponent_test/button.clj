@@ -3,7 +3,8 @@
 
 ;; Events
 
-(defmulti handler :event/type)
+(defmulti ^:private handler :event/type)
+
 (defmethod handler ::clicked
   [{:keys [fx/context fx/root clicked on-action from-effect] :as m}]
   {:pre [root]}
@@ -19,15 +20,16 @@
 
 (defn view
   "Main view to show a button with internal state."
-  [{:keys [fx/context fx/root on-action] :as m}]
+  [{:keys [fx/context on-action] :as m}]
   (let [clicked (or (fx/sub context ::clicked) 0)]
     {:fx/type :button
+     ; implicitly rooted because immediately passed to :button
      :on-action {:event/type ::clicked
                  :clicked clicked
                  :on-action on-action}
      :text (str "Clicked x" clicked)}))
 
-(def effects
+(def ^:private effects
   {::log-click (fn [{:keys [clicked]} dispatch!]
                  ; root automatically forwarded to dispatch!
                  (dispatch! {:event/type ::clicked

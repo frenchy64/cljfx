@@ -219,13 +219,16 @@ Possible reasons:
     (when *direct-deps
       (assert-not-leaked cache (::parent-sub-id context))
       (reset! *direct-deps ::context))
-    {::m new-m
-     ::*cache (atom (invalidate-cache cache m new-m))}))
+    (cond->
+      {::m new-m
+       ::*cache (atom (invalidate-cache cache m new-m))}
+      root (assoc ::root root))))
 
 (defn swap [{::keys [root] :as context} f & args]
-  (-> context
-      (assoc ::root [])
-      (reset (apply update-in-flat (::m context) root f args))))
+  (cond-> context
+    root (assoc ::root [])
+    true (reset (apply update-in-flat (::m context) root f args))
+    root (assoc ::root root)))
 
 (defn create [m cache-factory]
   {::m m
