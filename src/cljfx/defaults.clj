@@ -27,11 +27,11 @@
       (provide :fx.opt/map-event-handler map-event-handler)))
 
 (defn fill-co-effects [co-effects *context]
-  (provide co-effects :fx/context (event-handler/make-deref-co-effect *context)))
+  (provide co-effects :fx/context (event-handler/make-deref-co-effect-with-root *context)))
 
 (defn fill-effects [effects *context]
   (-> effects
-      (provide :context (event-handler/make-reset-effect *context))
+      (provide :context (event-handler/make-reset-effect-without-root *context))
       (provide :dispatch event-handler/dispatch-effect)))
 
 (defn- print-error-handler [_ ^Throwable e]

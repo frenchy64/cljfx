@@ -1,6 +1,7 @@
 (ns cljfx.decomponent-test.button-pane
   (:require [cljfx.api :as fx]
             [cljfx.decomponent-test.button :as button]
+            [cljfx.decomponent :as dc]
             [cljfx.decomponent-test.dc-utils :as dc-utils]))
 
 ;; Note:
@@ -14,23 +15,20 @@
   {:pre [((every-pred vector? seq) ks)]}
   (get-in (fx/sub context (first ks)) (rest ks)))
 
-(defn button-path-element [id]
-  [::buttons id])
-
-(defn button-path [root id]
+(defn- dynamic-buttons-path [root]
   {:pre [(vector? root)]}
-  (conj root (button-path-element id)))
+  (conj root ::dynamic-buttons))
 
-(defn dynamic-ids-path [root]
+(defn- total-clicks-path [root]
   {:pre [(vector? root)]}
-  (conj root ::dynamic-ids))
+  (conj root ::total-clicks))
 
 ;; Effects
 
 (def effects {::gen-button-id
               (fn [{:keys [fx/root] :as m} dispatch!]
                 (dispatch!
-                  (assoc m :button-id (button-path root (gensym :button)))))})
+                  (assoc m :button-id (dc/create-decomponent root))))})
 
 ;; Event handler
 
@@ -42,21 +40,25 @@
   (if button-id
     (do
       (assert (vector? button-id))
-      {:context (fx/swap-context context update-in (dynamic-ids-path root) (fnil conj []) button-id)})
+      {:context (fx/swap-context context update-in (dynamic-buttons-path root) (fnil conj []) {:root button-id :clicked 0})})
     ; get an effect to generate a button id
     {::gen-button-id (select-keys m [:event/type :fx/root])})) ;;FIXME cannot automatically include :fx/root 
 
 (defmethod handler ::less-buttons
   [{:keys [fx/context fx/root] :as m}]
   {:pre [root]}
-  (let [dynamic-ids (sub-in context (dynamic-ids-path root))
-        new-dynamic-ids (if (seq dynamic-ids)
-                          (pop dynamic-ids)
-                          [])]
-    (cond-> [[:context (fx/swap-context context assoc-in (dynamic-ids-path root) new-dynamic-ids)]]
-      (seq dynamic-ids)
+  (let [dynamic-buttons (sub-in context (dynamic-buttons-path root))
+        new-dynamic-buttons (if (seq dynamic-buttons)
+                              (pop dynamic-buttons)
+                              [])]
+    (cond-> [[:context (fx/swap-context context assoc-in (dynamic-buttons-path root) new-dynamic-buttons)]]
+      (seq dynamic-buttons)
       (concat [[:dispatch {:event/type ::dc-utils/delete-decomponent
-                           :path (peek dynamic-ids)}]]))))
+                           :path (:root (peek dynamic-buttons))}]]))))
+
+(defmethod handler ::button-clicked
+  [{:keys [fx/context fx/root] :as m}]
+  )
 
 (defmethod handler :default
   [m]
@@ -64,16 +66,6 @@
 
 ;; Views
 
-(defn all-button-paths [context root]
-  (mapv #(button-path root %)
-        (concat [::first-button ::second-button]
-                (sub-in context (dynamic-ids-path root)))))
-
-(defn sum-clicks [context root]
-  {:pre [root]}
-  (reduce #(+ %1 (fx/sub context button/get-clicked %2))
-          0
-          (fx/sub context all-button-paths root)))
 
 (defn dynamic-buttons [{:keys [fx/context fx/root]}]
   {:pre [root]}
@@ -81,13 +73,20 @@
    :children (mapv #(do
                       {:fx/type button/view
                        :fx/root %})
-                   (sub-in context (dynamic-ids-path root)))})
+                   (sub-in context (dynamic-buttons-path root)))})
 
 (defn summarize-buttons [{:keys [fx/context fx/root]}]
   {:pre [root]}
-  (let [sum (fx/sub context sum-clicks root)]
+  (let [sum (fx/sub context sub-in (total-clicks-path root))]
     {:fx/type :label
      :text (str "Sum: " sum)}))
+
+(defn create-button [{:keys [fx/root id]}]
+  {:fx/type button/view
+   :fx/relative-root id
+   :on-action {:event/type ::button-clicked
+               :fx/root root
+               :button-path id}})
 
 (defn view
   "Main view of button panes."
@@ -97,10 +96,10 @@
    :children [{:fx/type :label
                :text "Buttons with static ids"}
               {:fx/type :h-box
-               :children [{:fx/type button/view
-                           :fx/root (button-path root ::first-button)}
-                          {:fx/type button/view
-                           :fx/root (button-path root ::second-button)}]}
+               :children [{:fx/type create-button
+                           :id ::first-button}
+                          {:fx/type create-button
+                           :id ::second-button}]}
               {:fx/type :label
                :text "Buttons with dynamic ids"}
               {:fx/type :h-box
@@ -114,6 +113,12 @@
               {:fx/type summarize-buttons}]})
 
 ;; Decomponent
+
+; list of decomponent dependencies to garbage collect
+(defn delete-decomponent [context root]
+  (map #(vector `button/decomponent %)
+       (concat (map #(dc/create-decomponent root %) [::first-button ::second-button])
+               (map :root (sub-in context (dynamic-buttons-path root))))))
 
 (def decomponent
   {:decomponents `#{button/decomponent

@@ -83,3 +83,12 @@
                  event-handler-map (update :event-handler-map merge event-handler-map)
                  swap-state-on-render-error (update :swap-state-on-render-error-fns (fnil conj #{})
                                                     swap-state-on-render-error)))))))
+
+(defn create-decomponent
+  ([] (create-decomponent []))
+  ([root]
+   {:pre [(vector? root)]}
+   (conj root (keyword "cljfx.decomponent" (str (java.util.UUID/randomUUID)))))
+  ([root id]
+   {:pre [(vector? root)]}
+   (conj root id)))

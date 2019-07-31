@@ -452,7 +452,8 @@
                (delete lifecycle component opts))}))
 
 (defn init-root [{:keys [fx.opt/decomponent-root]}]
-  [(or decomponent-root ::decomponents)])
+  (or (some-> decomponent-root vector)
+      []))
 
 (defn wrap-context-desc [lifecycle]
   (with-meta
@@ -473,14 +474,16 @@
                (delete lifecycle (:child component) opts))}))
 
 (defn- call-context-fn [context desc root]
-  ((:fx/type desc) (-> desc
-                       (dissoc :fx/type)
-                       (assoc :fx/context context)
-                       (update :fx/root #(or % root)))))
+  (let [root (:fx/root desc root)]
+    ((:fx/type desc) (-> desc
+                         (dissoc :fx/type)
+                         (assoc :fx/context (assoc context ::context/root root))
+                         (update :fx/root #(or % root))))))
 
 (defn- sub-context-fn [desc opts]
   (let [context (:fx/context opts)
         root (:fx/root opts)]
+    (prn "calling desc" desc root)
     (context/sub context call-context-fn desc root)))
 
 (def context-fn->dynamic

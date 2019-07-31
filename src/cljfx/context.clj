@@ -136,27 +136,40 @@ Possible reasons:
             (sub-from-dirty context *cache cache sub-id)))
         (recalc)))))
 
-(defn sub [context k & args]
-  (let [sub-id (apply vector k args)
-        {::keys [*cache *direct-deps *key-deps]} context
-        cache @*cache
-        ret (if (fn? k)
-              (let [entry (-> (register-cache-entry context *cache cache sub-id)
-                              (lookup sub-id))]
-                (when *key-deps
-                  (swap! *key-deps set/union (::key-deps entry)))
-                (::value entry))
-              (do
-                (when (seq args)
-                  (throw (ex-info "Subscribing to keys does not allow additional args"
-                                  {:k k :args args})))
-                (when *key-deps
-                  (swap! *key-deps conj k))
-                (get-in context [::m k])))]
-    (when *direct-deps
-      (assert-not-leaked cache (::parent-sub-id context) :child-sub-id sub-id)
-      (swap! *direct-deps add-dep sub-id ret))
-    ret))
+(defn- sub-in [context root k args]
+  {:pre [(seq root)
+         (not (fn? k))]}
+  (when (seq args)
+    (throw (ex-info "Subscribing to keys does not allow additional args"
+                    {:k k :args args})))
+  (-> (sub context (first root))
+      (get-in (rest root))
+      (get k)))
+
+(defn sub [{::keys [root] :as context} k & args]
+  (if (and (seq root)
+           (not (fn? k)))
+    (sub (assoc context ::root []) sub-in root k args)
+    (let [sub-id (apply vector k args)
+          {::keys [*cache *direct-deps *key-deps]} context
+          cache @*cache
+          ret (if (fn? k)
+                (let [entry (-> (register-cache-entry context *cache cache sub-id)
+                                (lookup sub-id))]
+                  (when *key-deps
+                    (swap! *key-deps set/union (::key-deps entry)))
+                  (::value entry))
+                (do
+                  (when (seq args)
+                    (throw (ex-info "Subscribing to keys does not allow additional args"
+                                    {:k k :args args})))
+                  (when *key-deps
+                    (swap! *key-deps conj k))
+                  (get-in context [::m k])))]
+      (when *direct-deps
+        (assert-not-leaked cache (::parent-sub-id context) :child-sub-id sub-id)
+        (swap! *direct-deps add-dep sub-id ret))
+      ret)))
 
 (defn- intersects? [s1 s2]
   (if (< (count s2) (count s1))
@@ -189,8 +202,19 @@ Possible reasons:
             cache
             cache)))
 
-(defn reset [context new-m]
+(defn- update-in-flat [m p f & args]
+  (if-some [p (seq p)]
+    (apply update-in m p f args)
+    (apply f m args)))
+
+(defn- assoc-in-flat [m p v]
+  (if-some [p (seq p)]
+    (apply assoc-in m p v)
+    v))
+
+(defn reset [{::keys [root] :as context} new-m]
   (let [{::keys [m *cache *direct-deps]} context
+        new-m (assoc-in-flat m root new-m)
         cache @*cache]
     (when *direct-deps
       (assert-not-leaked cache (::parent-sub-id context))
@@ -198,8 +222,10 @@ Possible reasons:
     {::m new-m
      ::*cache (atom (invalidate-cache cache m new-m))}))
 
-(defn swap [context f & args]
-  (reset context (apply f (::m context) args)))
+(defn swap [{::keys [root] :as context} f & args]
+  (-> context
+      (assoc ::root [])
+      (reset (apply update-in-flat (::m context) root f args))))
 
 (defn create [m cache-factory]
   {::m m

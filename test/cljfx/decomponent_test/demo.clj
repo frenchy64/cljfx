@@ -1,11 +1,8 @@
 (ns cljfx.decomponent-test.demo
   (:require [cljfx.api :as fx]
+            [cljfx.decomponent :as dc]
             [cljfx.decomponent-test.button-pane :as button-pane]
             [cljfx.decomponent-test.dc-utils :as dc-utils]))
-
-(defn button-pane-path [root id]
-  {:pre [(vector? root)]}
-  (conj root [::button-pane id]))
 
 ;; Event handler
 
@@ -14,7 +11,7 @@
 (defmethod handler ::more-button-panes
   [{:keys [fx/context fx/root] :as m}]
   {:context (fx/swap-context context update ::dynamic-ids (fnil conj [])
-                             (button-pane-path root (gensym :pane)))})
+                             (dc/create-decomponent root (gensym :pane)))})
 
 (defmethod handler ::less-button-panes
   [{:keys [fx/context] :as m}]
