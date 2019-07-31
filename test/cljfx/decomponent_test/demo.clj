@@ -4,6 +4,10 @@
             [cljfx.decomponent-test.button-pane :as button-pane]
             [cljfx.decomponent-test.dc-utils :as dc-utils]))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Demo app that uses decomponents ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defn- create-pane-id []
   (keyword "cljfx.decomponent-test.demo.random-decomponent"
            (str (java.util.UUID/randomUUID))))

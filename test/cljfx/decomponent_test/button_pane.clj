@@ -132,36 +132,39 @@
 
 ;; Test
 
+(defn- try-me []
+  (declare *context app)
+
+  (when (and (.hasRoot #'*context)
+             (.hasRoot #'app))
+    (fx/unmount-renderer *context (:renderer app)))
+
+  (def *context
+    (atom (fx/create-context {})))
+
+  (def app
+    (let [ids (take 3 (repeatedly gensym))]
+      (fx/create-app *context
+                     :decomponents `#{decomponent}
+                     :event-handler #(if (fn? %)
+                                       (%)
+                                       (println "No handler: " (:event/type %)))
+                     :desc-fn (fn [{:keys [fx/context]}]
+                                {:fx/type :stage
+                                 :showing true
+                                 :always-on-top true
+                                 :width 900
+                                 :height 400
+                                 :scene {:fx/type :scene
+                                         :root {:fx/type :scroll-pane
+                                                :fit-to-width true
+                                                :fit-to-height true
+                                                :content
+                                                {:fx/type :h-box
+                                                 :children (mapv #(do
+                                                                    {:fx/type view
+                                                                     :fx/root [%]})
+                                                                 ids)}}}})))))
+
 (comment
-
-(declare *context app)
-
-(when (and (.hasRoot #'*context)
-           (.hasRoot #'app))
-  (fx/unmount-renderer *context (:renderer app)))
-
-(def *context
-  (atom (fx/create-context {})))
-
-(def app
-  (let [ids (take 3 (repeatedly gensym))]
-    (fx/create-app *context
-      :decomponents `#{decomponent}
-      :event-handler #(println "No handler: " (:event/type %))
-      :desc-fn (fn [_]
-                 {:fx/type :stage
-                  :showing true
-                  :always-on-top true
-                  :width 900
-                  :height 400
-                  :scene {:fx/type :scene
-                          :root {:fx/type :scroll-pane
-                                 :fit-to-width true
-                                 :fit-to-height true
-                                 :content
-                                 {:fx/type :h-box
-                                  :children (mapv #(do
-                                                     {:fx/type view
-                                                      :fx/root [%]})
-                                                  ids)}}}}))))
-)
+  (try-me))
