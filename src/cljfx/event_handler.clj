@@ -7,7 +7,6 @@
 (defn make-deref-co-effect-with-root [*context]
   (->
     (fn [event]
-      (prn "deref-co-effect" (find event :fx/root))
       (-> (deref *context)
           (assoc :cljfx.context/root (:fx/root event []))))
     (with-meta {::provide-co-effect-event true})))

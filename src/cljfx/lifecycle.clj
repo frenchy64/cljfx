@@ -483,7 +483,6 @@
 (defn- sub-context-fn [desc opts]
   (let [context (:fx/context opts)
         root (:fx/root opts)]
-    (prn "calling desc" desc root)
     (context/sub context call-context-fn desc root)))
 
 (def context-fn->dynamic

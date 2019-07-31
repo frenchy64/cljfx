@@ -8,7 +8,7 @@
   [{:keys [fx/context fx/root clicked on-action from-effect] :as m}]
   {:pre [root]}
   (if from-effect
-    (prn "REBOUND" root)
+    (do #_(prn "REBOUND" root))
     (cond->
       {:context (fx/swap-context context update ::clicked (fnil inc 0))
        ; Note: :fx/root must be passed manually to effects
@@ -39,6 +39,7 @@
 
 ;; Main app
 
+(comment
 (declare *context app)
 
 (when (and (.hasRoot #'*context)
@@ -62,3 +63,4 @@
                 :scene {:fx/type :scene
                         :root {:fx/type view
                                :fx/root [::decomponents ::my-button]}}})))
+)
