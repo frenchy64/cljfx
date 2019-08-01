@@ -443,7 +443,167 @@
                                      {:key :path}]
     :capture-support/match-images [{:key :image0}
                                    {:key :image1}
-                                   {:key :pixel-matcher}]))
+                                   {:key :pixel-matcher}]
+
+    :fx-robot/target-window [{:key :window
+                              :coerce ^javafx.stage.Window identity
+                              :one-of #{0}}
+                             {:key :predicate
+                              :coerce ^java.util.function.Predicate identity
+                              :one-of #{0}}
+                             {:key :window-index
+                              :coerce int
+                              :one-of #{0}}
+                             {:key :stage-title-regex
+                              :coerce str
+                              :one-of #{0}}
+                             {:key :stage-title-pattern
+                              :coerce ^java.util.regex.Pattern identity
+                              :one-of #{0}}
+                             {:key :scene
+                              :coerce ^Scene identity
+                              :one-of #{0}}
+                             {:key :node
+                              :coerce ^Node identity
+                              :one-of #{0}}]
+    :fx-robot/list-windows []
+    :fx-robot/list-target-windows []
+
+    :fx-robot/window [{:key :predicate
+                       :coerce ^java.util.function.Predicate identity
+                       :one-of #{0}}
+                      {:key :window-index
+                       :coerce int
+                       :one-of #{0}}
+                      {:key :stage-title-regex
+                       :coerce str
+                       :one-of #{0}}
+                      {:key :stage-title-pattern
+                       :coerce ^java.util.regex.Pattern identity
+                       :one-of #{0}}
+                      {:key :scene
+                       :coerce ^Scene identity
+                       :one-of #{0}}
+                      {:key :node
+                       :coerce ^Node identity
+                       :one-of #{0}}]
+    :fx-robot/from-all []
+    :fx-robot/from [; Note: overloaded Collection arity is identical, so omitted
+                       {:key :parent-nodes
+                        :coerce coerce-nodes
+                        :one-of #{0}}
+                       {:key :node-query
+                        :coerce ^org.testfx.service.query.NodeQuery identity
+                        :one-of #{0}}]
+    :fx-robot/lookup [{:key :query
+                       :coerce str
+                       :one-of #{0}}
+                      {:key :matcher
+                       :coerce ^org.hamcrest.Matcher identity
+                       :one-of #{0}}
+                      {:key :predicate
+                       :coerce ^java.util.function.Predicate identity
+                       :one-of #{0}}]
+    :fx-robot/root-node [{:key :window
+                          :coerce ^javafx.stage.Window identity 
+                          :one-of #{0}}
+                         {:key :scene
+                          :coerce ^Scene identity 
+                          :one-of #{0}}
+                         {:key :node
+                          :coerce ^Node identity 
+                          :one-of #{0}}]
+    :fx-robot/bounds [{:key :point
+                       :coerce coerce-point2d
+                       :one-of #{0}}
+                      {:key :bounds
+                       :coerce coerce-bounds
+                       :one-of #{0}}
+                      {:key :node
+                       :coerce ^Node identity
+                       :one-of #{0}}
+                      {:key :scene
+                       :coerce ^Scene identity
+                       :one-of #{0}}
+                      {:key :window
+                       :coerce ^javafx.stage.Window identity
+                       :one-of #{0}}
+                      {:key :min-x
+                       :coerce double
+                       :one-of #{0}}
+                      {:key :min-y
+                       :coerce double
+                       :only-with #{:min-x}}
+                      {:key :width
+                       :coerce double
+                       :only-with #{:min-y}}
+                      {:key :height
+                       :coerce double
+                       :only-with #{:width}}]
+    :fx-robot/target-pos [{:key :point-position
+                           :coerce ^javafx.geometry.Pos identity}]
+    :fx-robot/point [{:key :point
+                      :coerce coerce-point2d
+                      :one-of #{0}}
+                     {:key :bounds
+                      :coerce coerce-bounds
+                      :one-of #{0}}
+                     {:key :node
+                      :coerce ^Node identity
+                      :one-of #{0}}
+                     {:key :scene
+                      :coerce ^Scene identity
+                      :one-of #{0}}
+                     {:key :window
+                      :coerce ^javafx.stage.Window identity
+                      :one-of #{0}}
+                     {:key :query
+                      :coerce str
+                      :one-of #{0}}
+                     {:key :matcher
+                      :coerce ^org.hamcrest.Matcher identity
+                      :one-of #{0}}
+                     {:key :predicate
+                      :coerce ^java.util.function.Predicate identity
+                      :one-of #{0}}
+                     {:key :x
+                      :coerce double
+                      :one-of #{0}}
+                     {:key :y
+                      :coerce double
+                      :only-with #{:x}}]
+    :fx-robot/offset [{:key :point
+                       :coerce coerce-point2d
+                       :one-of #{0}}
+                      {:key :bounds
+                       :coerce coerce-bounds
+                       :one-of #{0}}
+                      {:key :scene
+                       :coerce ^Scene identity
+                       :one-of #{0}}
+                      {:key :window
+                       :coerce ^javafx.stage.Window identity
+                       :one-of #{0}}
+                      {:key :query
+                       :coerce str
+                       :one-of #{0}}
+                      {:key :matcher
+                       :coerce ^org.hamcrest.Matcher identity
+                       :one-of #{0}}
+                      {:key :predicate
+                       :coerce ^java.util.function.Predicate identity
+                       :one-of #{0}}
+                      {:key :node
+                       :coerce ^Node identity
+                       :one-of #{0}}
+                      {:key :offset-reference-pos
+                       :coerce ^javafx.geometry.Pos identity
+                       :only-with #{:node}}
+                      {:key :offset-x
+                       :coerce double}
+                      {:key :offset-y
+                       :coerce double}]
+))
 
 (defn exec [robot spec]
   (((:testfx/op spec) exec-specs)
