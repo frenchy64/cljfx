@@ -185,7 +185,7 @@
     (map? x) (map->style x)
     :else (fail "style" x)))
 
-(defn rectangle-2d [x]
+(defn ^Rectangle2D rectangle-2d [x]
   (cond
     (instance? Rectangle2D x) x
     (map? x) (Rectangle2D. (:min-x x) (:min-y x) (:width x) (:height x))

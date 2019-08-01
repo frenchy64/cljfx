@@ -433,7 +433,8 @@
                          :only-with #{:text}}]
 
     :capture-support/capture-node [{:key :node}]
-    :capture-support/capture-region [{:key :region}]
+    :capture-support/capture-region [{:key :region
+                                      :coerce coerce/rectangle-2d}]
     :capture-support/load-image [{:key :path}]
     :capture-support/save-image [{:key :image}
                                  {:key :path}]
@@ -603,6 +604,24 @@
                        :coerce double}
                       {:key :offset-y
                        :coerce double}]
+    :fx-robot/capture [{:key :screen-region
+                        :coerce coerce/rectangle-2d
+                        :one-of #{0}}
+                       {:key :bounds
+                        :coerce coerce-bounds
+                        :one-of #{0}}
+                       {:key :node
+                        :coerce ^Node identity
+                        :one-of #{0}}
+                       {:key :image
+                        :coerce ^javafx.scene.image.Image identity
+                        :one-of #{0}}
+                       {:key :path
+                        :coerce ^java.nio.file.Path identity
+                        :one-of #{0}}
+                       {:key :url
+                        :coerce ^java.net.URL identity
+                        :one-of #{0}}]
 ))
 
 (defn exec [robot spec]
