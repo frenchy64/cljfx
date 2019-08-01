@@ -55,7 +55,13 @@
    {:pre [((every-pred vector?) group prev)]}
    (let [gen-group-branch* #(gen-group-branch* m meth target arg-impl-map %1 %2)]
      (if (empty? group)
-       (concat [meth target] (map (comp arg-impl-map :key) prev))
+       (let [impls (map (fn [p]
+                          (let [k (:key p)
+                                impl (get arg-impl-map k)]
+                            (assert impl (str "No impl for " k))
+                            impl))
+                        prev)]
+         (concat [meth target] impls))
        (let [{:keys [key optional one-of only-with] :as fst} (first group)
              _ (assert (empty? (dissoc fst :key :optional :one-of :only-with))
                        (str "Invalid spec keys: " (set (keys (dissoc fst :key :optional :one-of :only-with)))))
@@ -66,8 +72,11 @@
              _ (assert ((some-fn nil? set?) expected-pos))
              current-pos (count prev)
              missing-deps (when only-with
-                            (not-empty (set/difference only-with
-                                                       (into #{} (map :key) prev))))]
+                            ; vector is disjuction, set is conjunction
+                            (some #(not-empty (set/difference % (into #{} (map :key) prev)))
+                                  (if (set? only-with)
+                                    [only-with]
+                                    only-with)))]
          (cond
            missing-deps
            `(throw (ex-info ~(str "Key provided without dependency")
@@ -108,6 +117,9 @@
 
 (defn- gen-group-branch
   ([k target-fn args group]
+   (assert (every? args (map :key group))
+           (str "Missing entry for keys: " (set/difference (set (map :key group))
+                                                           (set (keys args)))))
    (let [meth (let [[fst & nxt] (-> k
                                     name
                                     (str/split #"-"))]
@@ -166,6 +178,8 @@
            (into-array ~class-sym (map ~coerce (if (~pred a#)
                                                  #{a#}
                                                  a#))))))))
+
+(def ^KeyCode coerce-key-code (coerce/enum KeyCode))
 
 (defn-acoerce ^:private coerce-mouse-buttons MouseButton coerce-mouse-button keyword?)
 (defn-acoerce ^:private coerce-key-codes KeyCode (coerce/enum KeyCode) keyword?)
@@ -622,6 +636,220 @@
                        {:key :url
                         :coerce ^java.net.URL identity
                         :one-of #{0}}]
+    :fx-robot/interact [{:key :runnable
+                         :coerce ^Runnable identity
+                         :one-of #{0}}
+                        {:key :callable
+                         :coerce ^Callable identity
+                         :one-of #{0}}]
+    :fx-robot/interact-no-wait [{:key :runnable
+                                 :coerce ^Runnable identity
+                                 :one-of #{0}}
+                                {:key :callable
+                                 :coerce ^Callable identity
+                                 :one-of #{0}}]
+    :fx-robot/interrupt [{:key :attempts-count
+                          :coerce int
+                          :optional #{0}}]
+    :fx-robot/push [; Note: called `combinations` in TestFX
+                      {:key :key-codes
+                       :coerce coerce-key-codes
+                       :one-of #{0}}
+                      ; Note: called `combinations` in TestFX
+                      {:key :key-code-combination
+                       :coerce ^javafx.scene.input.KeyCodeCombination identity
+                       :one-of #{0}}]
+    :fx-robot/type [{:key :key-codes
+                     :coerce coerce-key-codes
+                     :one-of #{0}}
+                    {:key :key-code
+                     :coerce coerce-key-code
+                     :one-of #{0}}
+                    {:key :times
+                     :coerce int
+                     :only-with #{:key-code}}]
+    :fx-robot/erase-text [{:key :amount
+                           :coerce int}]
+
+    ;deprecated
+    ;:fx-robot/close-current-window
+
+    :fx-robot/write [{:key :character
+                      :coerce char
+                      :one-of #{0}}
+                     {:key :text
+                      :coerce str
+                      :one-of #{0}}
+                     {:key :sleep-millis
+                      :coerce int
+                      :only-with #{:text}}]
+    :fx-robot/sleep [{:key :milliseconds
+                      :coerce long
+                      :one-of #{0}}
+                     {:key :duration
+                      :coerce long
+                      :one-of #{0}}
+                     {:key :time-unit
+                      :coerce ^java.util.concurrent.TimeUnit identity
+                      :only-with #{:duration}}]
+    ;Note: Omitted direction 1-arities, simulated by :amount default
+    :fx-robot/scroll [{:key :amount
+                       :coerce int
+                       :default 1}
+                      ; called `direction` in JavaFX
+                      {:key :horizonal-direction
+                       :coerce ^javafx.geometry.HorizontalDirection identity
+                       :optional #{1}}
+                      ; called `direction` in JavaFX
+                      {:key :vertical-direction
+                       :coerce ^javafx.geometry.VerticalDirection identity
+                       :optional #{1}}]
+    :fx-robot/press [{:key :keys
+                      :coerce coerce-key-codes
+                      :one-of #{0}}
+                     {:key :buttons
+                      :coerce coerce-mouse-buttons
+                      :one-of #{0}}]
+    :fx-robot/release [{:key :keys
+                        :coerce coerce-key-codes
+                        :one-of #{0}}
+                       {:key :buttons
+                        :coerce coerce-mouse-buttons
+                        :one-of #{0}}]
+    :fx-robot/click-on {:args {:buttons {:coerce coerce-mouse-buttons}
+                               :point-query {:coerce ^org.testfx.service.query.PointQuery identity}
+                               :motion {:coerce coerce-motion}
+                               :point {:point coerce-point2d}
+                               :bounds {:coerce coerce-bounds}
+                               :node {:coerce ^Node identity}
+                               :scene {:coerce ^Scene identity}
+                               :window {:coerce ^javafx.stage.Window identity}
+                               :query {:coerce str}
+                               :matcher {:coerce ^org.hamcrest.Matcher identity}
+                               :predicate {:coerce ^java.util.function.Predicate identity}
+                               :x {:coerce double}
+                               :y {:coerce double}}
+                        :arg-groups #{[{:key :buttons
+                                        :one-of #{0}}
+                                       {:key :point-query
+                                        :one-of #{0}}
+                                       {:key :point
+                                        :one-of #{0}}
+                                       {:key :bounds
+                                        :one-of #{0}}
+                                       {:key :node
+                                        :one-of #{0}}
+                                       {:key :scene
+                                        :one-of #{0}}
+                                       {:key :window
+                                        :one-of #{0}}
+                                       {:key :query
+                                        :one-of #{0}}
+                                       {:key :matcher
+                                        :one-of #{0}}
+                                       {:key :predicate
+                                        :one-of #{0}}
+                                       {:key :x
+                                        :one-of #{0}}
+                                       {:key :y
+                                        :only-with #{:x}}
+                                       {:key :motion
+                                        ; ie., :not-with [#{:buttons}]
+                                        :only-with [#{:point-query}
+                                                    #{:x :y}
+                                                    #{:point}
+                                                    #{:bounds}
+                                                    #{:node}
+                                                    #{:scene}
+                                                    #{:window}
+                                                    #{:query}
+                                                    #{:matcher}
+                                                    #{:predicate}]}
+                                       {:key :buttons
+                                        :only-with #{:motion}}]}}
+    :fx-robot/right-click-on {:args {:point-query {:coerce ^org.testfx.service.query.PointQuery identity}
+                                     :motion {:coerce coerce-motion}
+                                     :point {:point coerce-point2d}
+                                     :bounds {:coerce coerce-bounds}
+                                     :node {:coerce ^Node identity}
+                                     :scene {:coerce ^Scene identity}
+                                     :window {:coerce ^javafx.stage.Window identity}
+                                     :query {:coerce str}
+                                     :matcher {:coerce ^org.hamcrest.Matcher identity}
+                                     :predicate {:coerce ^java.util.function.Predicate identity}
+                                     :x {:coerce double}
+                                     :y {:coerce double}}
+                              :arg-groups #{[{:key :point-query
+                                              :optional #{0}}
+                                             {:key :point
+                                              :optional #{0}}
+                                             {:key :bounds
+                                              :optional #{0}}
+                                             {:key :node
+                                              :optional #{0}}
+                                             {:key :scene
+                                              :optional #{0}}
+                                             {:key :window
+                                              :optional #{0}}
+                                             {:key :query
+                                              :optional #{0}}
+                                             {:key :matcher
+                                              :optional #{0}}
+                                             {:key :predicate
+                                              :optional #{0}}
+                                             {:key :x
+                                              :optional #{0}}
+                                             {:key :y
+                                              :only-with #{:x}}
+                                             {:key :motion
+                                              ; ie., :not-with [#{}]
+                                              :only-with [#{:point-query}
+                                                          #{:x :y}
+                                                          #{:point}
+                                                          #{:bounds}
+                                                          #{:node}
+                                                          #{:scene}
+                                                          #{:window}
+                                                          #{:query}
+                                                          #{:matcher}
+                                                          #{:predicate}]}]}}
+    :fx-robot/double-click-on {:args {:buttons {:coerce coerce-mouse-buttons}
+                                      :point-query {:coerce ^org.testfx.service.query.PointQuery identity}
+                                      :motion {:coerce coerce-motion}
+                                      :point {:point coerce-point2d}
+                                      :bounds {:coerce coerce-bounds}
+                                      :node {:coerce ^Node identity}
+                                      :scene {:coerce ^Scene identity}
+                                      :window {:coerce ^javafx.stage.Window identity}
+                                      :query {:coerce str}
+                                      :matcher {:coerce ^org.hamcrest.Matcher identity}
+                                      :predicate {:coerce ^java.util.function.Predicate identity}
+                                      :x {:coerce double}
+                                      :y {:coerce double}}
+                               :arg-groups #{[{:key :point-query
+                                               :one-of #{0}}
+                                              {:key :point
+                                               :one-of #{0}}
+                                              {:key :bounds
+                                               :one-of #{0}}
+                                              {:key :node
+                                               :one-of #{0}}
+                                              {:key :scene
+                                               :one-of #{0}}
+                                              {:key :window
+                                               :one-of #{0}}
+                                              {:key :query
+                                               :one-of #{0}}
+                                              {:key :matcher
+                                               :one-of #{0}}
+                                              {:key :predicate
+                                               :one-of #{0}}
+                                              {:key :x
+                                               :one-of #{0}}
+                                              {:key :y
+                                               :only-with #{:x}}
+                                              {:key :motion}
+                                              {:key :buttons}]}}
 ))
 
 (defn exec [robot spec]
