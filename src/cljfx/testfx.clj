@@ -12,9 +12,9 @@
 
 (set! *warn-on-reflection* true)
 
-(def ^Motion coerce-motion (coerce/enum Motion))
+(def ^:private ^Motion coerce-motion (coerce/enum Motion))
 
-(def ^MouseButton coerce-mouse-button (coerce/enum javafx.scene.input.MouseButton))
+(def ^:private ^MouseButton coerce-mouse-button (coerce/enum javafx.scene.input.MouseButton))
 
 (defn- ^Point2D coerce-point2d [p]
   (cond
@@ -25,55 +25,10 @@
                             (Point2D. x y))
     :else (coerce/fail Point2D p)))
 
-(defn ^Bounds coerce-bounds [p]
+(defn- ^Bounds coerce-bounds [p]
   {:pre [(instance? Bounds p)]}
   ;TODO
   p)
-
-(defn ^FxRobot robot []
-  (FxRobot.))
-
-(defn click-on [^FxRobot robot & {:keys [target buttons motion bounds point-query point]
-                                  :or {motion :default}}]
-  {:pre [(#{0 1} (count (into []
-                              (filter identity)
-                              [point-query
-                               point
-                               bounds])))]}
-  (let [motion (coerce-motion motion)
-        buttons ^"[Ljavafx.scene.input.MouseButton;"
-        (into-array javafx.scene.input.MouseButton (mapv coerce-mouse-button buttons))]
-    (cond
-      (instance? Scene target) (.clickOn robot ^Scene target motion buttons)
-      (instance? Node target) (.clickOn robot ^Node target motion buttons)
-      (instance? Bounds target) (.clickOn robot ^Bounds target motion buttons)
-      (instance? Point2D target) (.clickOn robot ^Point2D target motion buttons)
-      ;(instance? PointQuery target) (.clickOn robot ^PointQuery target motion buttons)
-      ;NYI
-      (instance? String target) (.clickOn robot ^String target motion buttons)
-      point-query nil
-      bounds nil
-      :else nil)
-    robot))
-
-; Primitives
-
-(def keyword->testfx-class-symbol
-  '{:window-finder org.testfx.service.finder.WindowFinder
-    :node-finder  org.testfx.service.finder.NodeFinder
-    :bounds-locator org.testfx.service.locator.BoundsLocator
-    :point-locator org.testfx.service.locator.PointLocator
-    :base-robot org.testfx.robot.BaseRobot
-    :mouse-robot org.testfx.robot.MouseRobot
-    :keyboard-robot org.testfx.robot.KeyboardRobot
-    :move-robot org.testfx.robot.MoveRobot
-    :sleep-robot org.testfx.robot.SleepRobot
-    :click-robot org.testfx.robot.ClickRobot
-    :drag-robot org.testfx.robot.DragRobot
-    :scroll-robot org.testfx.robot.ScrollRobot
-    :type-robot org.testfx.robot.TypeRobot
-    :write-robot org.testfx.robot.WriteRobot
-    :capture-support org.testfx.service.support.CaptureSupport})
 
 (defmacro from-context [robot meth]
   (let [instance-sym (with-meta (gensym "robot") {:tag 'org.testfx.api.FxRobot})
@@ -89,26 +44,56 @@
   (if (vector? v)
     {:args (into {}
                  (map (fn [{:keys [key] :as arg}]
-                        [key (dissoc arg :key :optional)]))
+                        [key (dissoc arg :key :optional :one-of)]))
                  v)
-     :arg-groups #{(mapv #(select-keys % [:optional :key])
+     :arg-groups #{(mapv #(select-keys % [:optional :key :one-of])
                          v)}}
     v))
 
 (defn- gen-group-branch*
   ([m meth target arg-impl-map prev group]
-   {:pre [(vector? group)]}
+   {:pre [((every-pred vector?) group prev)]}
    (let [gen-group-branch* #(gen-group-branch* m meth target arg-impl-map %1 %2)]
      (if (empty? group)
        (concat [meth target] (map (comp arg-impl-map :key) prev))
-       (let [{:keys [key optional] :as fst} (first group)
+       (let [{:keys [key optional one-of] :as fst} (first group)
              _ (assert (map? fst))
-             _ (assert (keyword? key))]
-         (if (:optional fst)
-           `(if (contains? ~m ~key)
-              ~(gen-group-branch* prev (update group 0 dissoc :optional))
-              ~(gen-group-branch* (conj prev fst) (subvec group 1)))
-           (gen-group-branch* (conj prev fst) (subvec group 1))))))))
+             _ (assert (keyword? key))
+             _ (assert (not (and optional one-of)))
+             expected-pos (or optional one-of)
+             _ (assert ((some-fn nil? set?) expected-pos))
+             current-pos (count prev)]
+         (cond
+           expected-pos
+           (let [throw-one-of (fn []
+                                `(throw (ex-info ~(str "Must provide one of keys")
+                                                 {:pos ~current-pos
+                                                  :keys ~(conj (into #{}
+                                                                     (comp (filter (comp #(contains? % current-pos)
+                                                                                         (some-fn :optional :one-of)))
+                                                                           (map :key))
+                                                                     prev)
+                                                               key)})))
+                 throw-ambiguous (fn []
+                                   `(throw (ex-info "Key conflict"
+                                                    {:key ~key
+                                                     :conflicts ~(into #{}
+                                                                       (comp (filter (comp #{one-of} :one-of))
+                                                                             (map :key))
+                                                                       prev)})))
+                 dispose #(gen-group-branch* prev (subvec group 1))]
+             (if (contains? expected-pos current-pos)
+               `(if (contains? ~m ~key)
+                  ~(gen-group-branch* (conj prev fst) (subvec group 1))
+                  ~(if (and one-of (not (some-> group second :one-of (contains? current-pos))))
+                     (throw-one-of)
+                     (dispose)))
+               `(if (contains? ~m ~key)
+                  ~(throw-ambiguous)
+                  ~(dispose))))
+
+             :else
+             (gen-group-branch* (conj prev fst) (subvec group 1))))))))
 
 (defn- gen-group-branch
   ([k target-fn args group]
@@ -143,11 +128,15 @@
                       robot)]
        target#)))
 
+(defn- check-ambiguous-groups [groups]
+  (assert (#{1} (count groups))
+          "Ambiguous grouping"))
+
 (defn- gen-exec-specs* [target-fn spec-args]
   (into {}
         (map (fn [[k v]]
                (let [{:keys [args arg-groups]} (normalize-exec v)
-                     _ (assert (#{1} (count arg-groups)))
+                     _ (check-ambiguous-groups arg-groups)
                      impl (gen-group-branch k target-fn args (first arg-groups))]
                  [k impl])))
         (partition 2 spec-args)))
@@ -225,7 +214,7 @@
     :keyboard-robot/release-no-wait [{:key :keys :coerce coerce-key-codes}]
 
     :drag-robot/drag [{:key :point-query
-                       :optional true}
+                       :optional #{0}}
                       {:key :buttons
                        :coerce coerce-mouse-buttons}]
     :drag-robot/drop []
@@ -250,25 +239,25 @@
     #_#_
     :window-finder/target-window [{:key :window
                                    :coerce ^javafx.stage.Window identity
-                                   :optional 0}
+                                   :one-of #{0}}
                                   {:key :predicate
                                    :coerce ^java.util.function.Predicate identity
-                                   :optional 0}
+                                   :one-of #{0}}
                                   {:key :window-index
                                    :coerce int
-                                   :optional 0}
+                                   :one-of #{0}}
                                   {:key :stage-title-regex
                                    :coerce str
-                                   :optional 0}
+                                   :one-of #{0}}
                                   {:key :stage-title-pattern
                                    :coerce ^java.util.regex.Pattern identity
-                                   :optional 0}
+                                   :one-of #{0}}
                                   {:key :scene
                                    :coerce ^Scene identity
-                                   :optional 0}
+                                   :one-of #{0}}
                                   {:key :node
                                    :coerce ^Node identity
-                                   :optional 0}
+                                   :one-of #{0}}
                                   ]
 
     :window-finder/list-windows []
@@ -283,7 +272,7 @@
     :bounds-locator/bounds-in-scene-for [{:key :node}]
     :bounds-locator/bounds-in-window-for [{:key :bounds-in-scene
                                            :coerce coerce-bounds
-                                           :optional true}
+                                           :optional #{0}}
                                           {:key :scene}]
     ;TODO heavily overloaded
     :bounds-locator/bounds-on-screen-for [{:key :bounds-in-scene
@@ -346,52 +335,7 @@
   (((:testfx/op spec) exec-specs)
    (assoc spec :testfx/robot robot)))
 
-(comment
-  (macroexpand-1
-    `(gen-exec-specs
-       :drag-robot/drag [{:key :point-query
-                          :optional true}
-                         {:key :buttons
-                          :coerce coerce-mouse-buttons}]))
-  (require 'clojure.pprint)
-  (clojure.pprint/pprint
-  (macroexpand-1
-    `(gen-exec-specs
-    :window-finder/target-window [{:key :window
-                                   :coerce ^javafx.stage.Window identity
-                                   :optional 0}
-                                  {:key :predicate
-                                   :coerce ^java.util.function.Predicate identity
-                                   :optional 0}
-                                  {:key :window-index
-                                   :coerce int
-                                   :optional 0}
-                                  {:key :stage-title-regex
-                                   :coerce str
-                                   :optional 0}
-                                  {:key :stage-title-pattern
-                                   :coerce ^java.util.regex.Pattern identity
-                                   :optional 0}
-                                  {:key :scene
-                                   :coerce ^Scene identity
-                                   :optional 0}
-                                  {:key :node
-                                   :coerce ^Node identity
-                                   :optional 0}
-                                  ])))
-
-    )
-
-#_
-(deftest robot
-  (is (-> robot
-          (.lookup ".button")
-          (.queryAs Button))))
-
-#_
-(query robot ".button")
-
-(def keyword->class-sym
+(def ^:private keyword->class-sym
   '{:sphere javafx.scene.shape.Sphere,
     :indexed-cell javafx.scene.control.IndexedCell,
     :svg-path javafx.scene.shape.SVGPath,
@@ -592,20 +536,6 @@
 ;          :is-not-default-button
 ;          ]
 ; }
-
-
-;{:testfx/assert :combo-box}
-;{:testfx/assert :dimension-2d}
-;{:testfx/assert :labeled}
-;{:testfx/assert :list-view}
-;{:testfx/assert :node}
-;{:testfx/assert :parent}
-;{:testfx/assert :styleable}
-;{:testfx/assert :table-view}
-;{:testfx/assert :text}
-;{:testfx/assert :text-flow}
-;{:testfx/assert :text-input-control}
-;{:testfx/assert :window}
 
 (comment
 (def fx-packages
