@@ -51,6 +51,10 @@
                                        %))]
     (are [x y] (= x y)
          (tst {:ch \a}) 0
+         (tst {:ch \a
+               :from-index 0}) 0
+         (tst {:ch \a
+               :from-index 1}) -1
          (tst {:ch \s}) 1
          (tst {:ch \d}) 2
          (tst {:ch \f}) 3
@@ -62,4 +66,26 @@
          (tst {:str "asdfb"}) -1
          (tst {:str 'asdf}) 0
          (tst {:str 'asdfb}) -1
-         )))
+         (tst {:str 'sdf
+               :from-index 1}) 1
+         (tst {:str 'df
+               :from-index 2}) 2
+         (tst {:str 'df
+               :from-index 1}) 2
+         (tst {:str 'df
+               :from-index 3}) -1
+         )
+    (try
+      (tst {:str "a"
+            :ch \a})
+      (is false)
+      (catch clojure.lang.ExceptionInfo e
+        (is (= {:keys #{:str :ch}} (select-keys (ex-data e) [:keys])))))
+    (try
+      (tst {:str "a"
+            :ch \a})
+      (is false)
+      (catch clojure.lang.ExceptionInfo e
+        (is (= "Disallowed key combination" (ex-message e)))
+        (is (= {:keys #{:str :ch}} (select-keys (ex-data e) [:keys])))))
+    ))

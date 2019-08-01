@@ -75,12 +75,13 @@
                                                                      prev)
                                                                key)})))
                  throw-ambiguous (fn []
-                                   `(throw (ex-info "Key conflict"
-                                                    {:key ~key
-                                                     :conflicts ~(into #{}
-                                                                       (comp (filter (comp #{one-of} :one-of))
-                                                                             (map :key))
-                                                                       prev)})))
+                                   `(throw (ex-info "Disallowed key combination"
+                                                    {:keys ~(conj
+                                                              (into #{}
+                                                                    (comp (filter (comp #{one-of} :one-of))
+                                                                          (map :key))
+                                                                    prev)
+                                                              key)})))
                  dispose #(gen-group-branch* prev (subvec group 1))]
              (if (contains? expected-pos current-pos)
                `(if (contains? ~m ~key)
