@@ -114,7 +114,6 @@
 #_
 (query robot ".button")
 
-
 (def keyword->class-sym
   '{:sphere javafx.scene.shape.Sphere,
     :indexed-cell javafx.scene.control.IndexedCell,
@@ -285,6 +284,24 @@
              (repeat 'javafx)))
 
 #_(getter :button :text)
+
+
+(defmacro getter [cls meth & args]
+  (let [instance-sym (with-meta (gensym "instance") {:tag (if (keyword? cls)
+                                                            (keyword->class-sym cls)
+                                                            cls)})
+        getter-expr (if (keyword? meth)
+                      (symbol (apply str ".get" (map str/capitalize (-> meth
+                                                                        name
+                                                                        (str/split #"-")))))
+                      meth)]
+    `(fn [~instance-sym]
+       (~getter-expr ~instance-sym ~@args))))
+
+(getter :button .getText)
+(getter :button :text)
+(getter :button :tex)
+(getter :button .asdf)
 
 {:testfx/assert :button
  :button {:textfx/query :button
