@@ -85,55 +85,107 @@
     `(let [~instance-sym ~robot]
        (-> ~instance-sym .robotContext ~getter-expr))))
 
-(defmacro gen-exec-specs [& spec-args]
+(defn- normalize-exec [v]
+  (if (vector? v)
+    {:args (into {}
+                 (map (fn [{:keys [key] :as arg}]
+                        [key (dissoc arg :key :optional)]))
+                 v)
+     :arg-groups #{(mapv #(select-keys % [:optional :key])
+                         v)}}
+    v))
+
+(defn- gen-group-branch*
+  ([m meth target arg-impl-map prev group]
+   {:pre [(vector? group)]}
+   (let [gen-group-branch* #(gen-group-branch* m meth target arg-impl-map %1 %2)]
+     (if (empty? group)
+       (concat [meth target] (map (comp arg-impl-map :key) prev))
+       (let [{:keys [key optional] :as fst} (first group)
+             _ (assert (map? fst))
+             _ (assert (keyword? key))]
+         (if (:optional fst)
+           `(if (contains? ~m ~key)
+              ~(gen-group-branch* prev (update group 0 dissoc :optional))
+              ~(gen-group-branch* (conj prev fst) (subvec group 1)))
+           (gen-group-branch* (conj prev fst) (subvec group 1))))))))
+
+(defn- gen-group-branch
+  ([k target-fn args group]
+   (let [meth (let [[fst & nxt] (-> k
+                                    name
+                                    (str/split #"-"))]
+                            (symbol (apply str "." fst (map str/capitalize nxt))))
+         m (gensym 'm)
+         arg-impl-map (into {}
+                            (map (fn [[key {:keys [default] :as arg}]]
+                                   {:pre [(keyword? key)]}
+                                   [key (let [v `(get ~m ~key ~default)]
+                                          (if-let [[_ coerce] (find arg :coerce)]
+                                            `(~coerce ~v)
+                                            v))]))
+                            args)]
+     `(fn [~m]
+        ~(gen-group-branch* m
+                            meth
+                            (target-fn m k)
+                            arg-impl-map
+                            []
+                            group)))))
+
+(defn- testfx-target-fn [m k]
+  (let [subcontext (keyword (namespace k))]
+    `(let [^FxRobot robot# ~(if (not= subcontext :fx-robot)
+                              `(from-context (:testfx/robot ~m) ~subcontext)
+                              `(:testfx/robot ~m))]
+       robot#)))
+
+(defn- gen-exec-specs* [target-fn spec-args]
   (into {}
         (map (fn [[k v]]
-               (let [{:keys [args arg-groups]} (if (vector? v)
-                                                 {:args (into {}
-                                                              (map (fn [{:keys [key] :as arg}]
-                                                                     [key (dissoc arg :key :optional)]))
-                                                              v)
-                                                  :arg-groups #{(mapv #(select-keys % [:optional :key])
-                                                                      v)}}
-                                                 v)
-                     subcontext (keyword (namespace k))
-                     meth (let [[fst & nxt] (-> k
-                                                name
-                                                (str/split #"-"))]
-                            (symbol (apply str "." fst (map str/capitalize nxt))))
-                     m (gensym 'm)
-                     robot (with-meta (gensym 'robot)
-                                      {:tag 'org.testfx.api.FxRobot})
-                     call-no-args `(~meth ~(if (not= subcontext :fx-robot)
-                                             `(from-context ~robot ~subcontext)
-                                             robot))
-                     arg-impl-map (into {}
-                                        (map (fn [[key {:keys [default] :as arg}]]
-                                               {:pre [(keyword? key)]}
-                                               [key (let [v `(get ~m ~key ~default)]
-                                                      (if-let [[_ coerce] (find arg :coerce)]
-                                                        `(~coerce ~v)
-                                                        v))]))
-                                        args)
-                     gen-group-branch (fn gen-group-branch
-                                        ([group] (gen-group-branch [] group))
-                                        ([prev group]
-                                         {:pre [(vector? group)]}
-                                         (if (empty? group)
-                                           (concat call-no-args (map (comp arg-impl-map :key) prev))
-                                           (let [{:keys [key optional] :as fst} (first group)
-                                                 _ (assert (map? fst))
-                                                 _ (assert (keyword? key))]
-                                             (if (:optional fst)
-                                               `(if (contains? ~m ~key)
-                                                  ~(gen-group-branch (update group 0 dissoc :optional))
-                                                  ~(gen-group-branch (subvec group 1)))
-                                               (gen-group-branch (conj prev fst) (subvec group 1)))))))
+               (let [{:keys [args arg-groups]} (normalize-exec v)
                      _ (assert (#{1} (count arg-groups)))
-                     impl `(fn [{~robot :testfx/robot :as ~m}]
-                             ~(gen-group-branch (first arg-groups)))]
+                     impl (gen-group-branch k target-fn args (first arg-groups))]
                  [k impl])))
         (partition 2 spec-args)))
+
+;(comment
+  (defmacro tst-general-specs [& spec-args]
+    (gen-exec-specs* (fn [m k]
+                       (let [o (with-meta (gensym 'o)
+                                          {:tag (-> k namespace symbol)})]
+                         `(let [~o (:target ~m)]
+                            ~o)))
+                     spec-args))
+
+  (macroexpand-1 '(tst-general-specs
+                    :java.lang.String/index-of [{:key :ch
+                                                 :coerce int}]))
+
+  (def general-specs
+    (tst-general-specs
+       :java.lang.String/index-of [{:key :ch
+                                    :coerce int}]))
+
+  (defn exec-general-spec [o spec]
+    {:pre [(not (contains? spec :target))]}
+    (((:general/op spec) general-specs)
+     (assoc spec :target o)))
+
+(let [tst #(exec-general-spec "asdf"
+                              {:general/op :java.lang.String/index-of
+                               :ch %})]
+  (assert (= (tst \a) 0))
+  (assert (= (tst \s) 1))
+  (assert (= (tst \d) 2))
+  (assert (= (tst \f) 3))
+  (assert (= (tst \b) -1))
+  )
+  ;)
+
+
+(defmacro testfx-specs [& spec-args]
+  (gen-exec-specs* testfx-target-fn spec-args))
 
 (defmacro defn-acoerce [name type coerce]
   (let [class-sym (symbol (.getName ^Class (resolve type)))
@@ -150,8 +202,9 @@
 (defn-acoerce coerce-mouse-buttons MouseButton coerce-mouse-button)
 (defn-acoerce coerce-key-codes KeyCode (coerce/enum KeyCode))
 
+#_
 (def exec-specs
-  (gen-exec-specs
+  (testfx-specs
     :base-robot/press-mouse [{:key :button
                               :default :primary
                               :coerce coerce-mouse-button}]
@@ -219,15 +272,37 @@
                             :coerce coerce-motion}
                            {:key :buttons
                             :coerce coerce-mouse-buttons}]
-    :click-robot/double-click-on [{:key :point-query
-                                   :optional true}
+    ;TODO support 1 & 2 overloads. cannot use :optional on both first two args.
+    :click-robot/double-click-on [{:key :point-query}
                                   {:key :motion
-                                   :optional true}
+                                   :coerce coerce-motion}
                                   {:key :buttons
                                    :coerce coerce-mouse-buttons}]
     
     ;TODO heavily overloaded
-    :window-finder/target-window []
+    #_#_
+    :window-finder/target-window [{:key :window
+                                   :coerce ^javafx.stage.Window identity
+                                   :optional 0}
+                                  {:key :predicate
+                                   :coerce ^java.util.function.Predicate identity
+                                   :optional 0}
+                                  {:key :window-index
+                                   :coerce int
+                                   :optional 0}
+                                  {:key :stage-title-regex
+                                   :coerce str
+                                   :optional 0}
+                                  {:key :stage-title-pattern
+                                   :coerce ^java.util.regex.Pattern identity
+                                   :optional 0}
+                                  {:key :scene
+                                   :coerce ^Scene identity
+                                   :optional 0}
+                                  {:key :node
+                                   :coerce ^Node identity
+                                   :optional 0}
+                                  ]
 
     :window-finder/list-windows []
     :window-finder/list-target-windows []
@@ -311,7 +386,34 @@
                           :optional true}
                          {:key :buttons
                           :coerce coerce-mouse-buttons}]))
-  )
+  (require 'clojure.pprint)
+  (clojure.pprint/pprint
+  (macroexpand-1
+    `(gen-exec-specs
+    :window-finder/target-window [{:key :window
+                                   :coerce ^javafx.stage.Window identity
+                                   :optional 0}
+                                  {:key :predicate
+                                   :coerce ^java.util.function.Predicate identity
+                                   :optional 0}
+                                  {:key :window-index
+                                   :coerce int
+                                   :optional 0}
+                                  {:key :stage-title-regex
+                                   :coerce str
+                                   :optional 0}
+                                  {:key :stage-title-pattern
+                                   :coerce ^java.util.regex.Pattern identity
+                                   :optional 0}
+                                  {:key :scene
+                                   :coerce ^Scene identity
+                                   :optional 0}
+                                  {:key :node
+                                   :coerce ^Node identity
+                                   :optional 0}
+                                  ])))
+
+    )
 
 #_
 (deftest robot

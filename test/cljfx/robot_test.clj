@@ -38,9 +38,13 @@
                   :point-query point-query
                   :motion :direct
                   :buttons :primary})
+    (testfx/exec robot
+                 {:testfx/op :type-robot/type
+                  :key-codes (repeat 10 :a)})
     ;(.targetWindow robot ^javafx.stage.Window (fx/instance cmp))
     #_
     (.clickOn robot point-query (testfx/coerce-motion :direct)
               ^"[Ljavafx.scene.input.MouseButton;"
               (into-array javafx.scene.input.MouseButton [javafx.scene.input.MouseButton/PRIMARY]))
+    #_
     (.type robot ^"[Ljavafx.scene.input.KeyCode;" (into-array javafx.scene.input.KeyCode [(KeyCode/valueOf "A")]))))
