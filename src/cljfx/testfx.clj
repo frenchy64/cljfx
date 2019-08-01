@@ -2,7 +2,8 @@
   (:require [cljfx.api :as fx]
             [cljfx.component :as component]
             [cljfx.coerce :as coerce]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [clojure.test :as test])
   (:import [org.testfx.api FxRobot FxRobotContext FxToolkit]
            [org.testfx.robot Motion BaseRobot]
            [javafx.geometry Point2D Bounds]
@@ -11,9 +12,9 @@
 
 (set! *warn-on-reflection* true)
 
-(def ^:private ^Motion coerce-motion (coerce/enum Motion))
+(def ^Motion coerce-motion (coerce/enum Motion))
 
-(def ^:private ^MouseButton coerce-mouse-button (coerce/enum javafx.scene.input.MouseButton))
+(def ^MouseButton coerce-mouse-button (coerce/enum javafx.scene.input.MouseButton))
 
 (defn- ^Point2D coerce-point2d [p]
   (cond
@@ -23,6 +24,11 @@
          (= 2 (count p))) (let [[x y] p]
                             (Point2D. x y))
     :else (coerce/fail Point2D p)))
+
+(defn ^Bounds coerce-bounds [p]
+  {:pre [(instance? Bounds p)]}
+  ;TODO
+  p)
 
 (defn ^FxRobot robot []
   (FxRobot.))
@@ -52,58 +58,260 @@
 
 ; Primitives
 
-(defn ^BaseRobot base-robot [^FxRobot robot]
-  (-> robot .robotContext .getBaseRobot))
+(def keyword->testfx-class-symbol
+  '{:window-finder org.testfx.service.finder.WindowFinder
+    :node-finder  org.testfx.service.finder.NodeFinder
+    :bounds-locator org.testfx.service.locator.BoundsLocator
+    :point-locator org.testfx.service.locator.PointLocator
+    :base-robot org.testfx.robot.BaseRobot
+    :mouse-robot org.testfx.robot.MouseRobot
+    :keyboard-robot org.testfx.robot.KeyboardRobot
+    :move-robot org.testfx.robot.MoveRobot
+    :sleep-robot org.testfx.robot.SleepRobot
+    :click-robot org.testfx.robot.ClickRobot
+    :drag-robot org.testfx.robot.DragRobot
+    :scroll-robot org.testfx.robot.ScrollRobot
+    :type-robot org.testfx.robot.TypeRobot
+    :write-robot org.testfx.robot.WriteRobot
+    :capture-support org.testfx.service.support.CaptureSupport})
 
-(defmulti exec :testfx/op)
+(defmacro from-context [robot meth]
+  (let [instance-sym (with-meta (gensym "robot") {:tag 'org.testfx.api.FxRobot})
+        getter-expr (if (keyword? meth)
+                      (symbol (apply str ".get" (map str/capitalize (-> meth
+                                                                        name
+                                                                        (str/split #"-")))))
+                      meth)]
+    `(let [~instance-sym ~robot]
+       (-> ~instance-sym .robotContext ~getter-expr))))
 
-;{:testfx/op :mouse/press
-; :testfx/robot Robot
-; :button Button}
-(defmethod exec :mouse/press
-  [{:keys [testfx/robot button]
-    :or {button :primary}}]
-  (.pressMouse (base-robot robot) (coerce-mouse-button button)))
+(defmacro gen-exec-specs [& spec-args]
+  (into {}
+        (map (fn [[k v]]
+               (let [{:keys [args arg-groups]} (if (vector? v)
+                                                 {:args (into {}
+                                                              (map (fn [{:keys [key] :as arg}]
+                                                                     [key (dissoc arg :key :optional)]))
+                                                              v)
+                                                  :arg-groups #{(mapv #(select-keys % [:optional :key])
+                                                                      v)}}
+                                                 v)
+                     subcontext (keyword (namespace k))
+                     meth (let [[fst & nxt] (-> k
+                                                name
+                                                (str/split #"-"))]
+                            (symbol (apply str "." fst (map str/capitalize nxt))))
+                     m (gensym 'm)
+                     robot (with-meta (gensym 'robot)
+                                      {:tag 'org.testfx.api.FxRobot})
+                     call-no-args `(~meth ~(if (not= subcontext :fx-robot)
+                                             `(from-context ~robot ~subcontext)
+                                             robot))
+                     arg-impl-map (into {}
+                                        (map (fn [[key {:keys [default] :as arg}]]
+                                               {:pre [(keyword? key)]}
+                                               [key (let [v `(get ~m ~key ~default)]
+                                                      (if-let [[_ coerce] (find arg :coerce)]
+                                                        `(~coerce ~v)
+                                                        v))]))
+                                        args)
+                     gen-group-branch (fn gen-group-branch
+                                        ([group] (gen-group-branch [] group))
+                                        ([prev group]
+                                         {:pre [(vector? group)]}
+                                         (if (empty? group)
+                                           (concat call-no-args (map (comp arg-impl-map :key) prev))
+                                           (let [{:keys [key optional] :as fst} (first group)
+                                                 _ (assert (map? fst))
+                                                 _ (assert (keyword? key))]
+                                             (if (:optional fst)
+                                               `(if (contains? ~m ~key)
+                                                  ~(gen-group-branch (update group 0 dissoc :optional))
+                                                  ~(gen-group-branch (subvec group 1)))
+                                               (gen-group-branch (conj prev fst) (subvec group 1)))))))
+                     _ (assert (#{1} (count arg-groups)))
+                     impl `(fn [{~robot :testfx/robot :as ~m}]
+                             ~(gen-group-branch (first arg-groups)))]
+                 [k impl])))
+        (partition 2 spec-args)))
 
-;{:testfx/op :mouse/release 
-; :button Button}
-(defmethod exec :mouse/release
-  [{:keys [testfx/robot button]
-    :or {button :primary}}]
-  (.releaseMouse (base-robot robot) (coerce-mouse-button button)))
+(defmacro defn-acoerce [name type coerce]
+  (let [class-sym (symbol (.getName ^Class (resolve type)))
+        tag (str "[L" class-sym ";")
+        name (with-meta name {:tag tag})]
+    `(let [t# (class (into-array ~class-sym []))]
+       (defn ~name [a#]
+         (if (instance? t# a#)
+           a#
+           (into-array ~class-sym (map ~coerce (if (keyword? a#)
+                                                 #{a#}
+                                                 a#))))))))
 
-;{:testfx/op :mouse/scroll
-; :amount Int}
-(defmethod exec :mouse/scroll
-  [{:keys [testfx/robot amount]}]
-  (.scrollMouse (base-robot robot) amount))
+(defn-acoerce coerce-mouse-buttons MouseButton coerce-mouse-button)
+(defn-acoerce coerce-key-codes KeyCode (coerce/enum KeyCode))
 
-;{:testfx/op :mouse/move
-; :point Point2D}
-(defmethod exec :mouse/move
-  [{:keys [testfx/robot point]}]
-  (.moveMouse (base-robot robot) (coerce-point2d point)))
+(def exec-specs
+  (gen-exec-specs
+    :base-robot/press-mouse [{:key :button
+                              :default :primary
+                              :coerce coerce-mouse-button}]
+    :base-robot/release-mouse [{:key :button
+                                :default :primary
+                                :coerce coerce-mouse-button}]
+    :base-robot/scroll-mouse [{:key :amount
+                               :coerce int}]
+    :base-robot/move-mouse [{:key :point
+                             :coerce coerce-point2d}]
+    :base-robot/capture-region [{:key :region
+                                 :coerce coerce/rectangle-2d}]
+    :base-robot/retrieve-mouse []
 
-#_
-{:testfx/op :assert
- :button Button}
+    :base-robot/press-keyboard [{:key :key
+                                 :coerce (coerce/enum KeyCode)}]
+    :base-robot/release-keyboard [{:key :key
+                                   :coerce (coerce/enum KeyCode)}]
 
-#_
-{:testfx/op :key/press
- :button Button}
+    :base-robot/type-keyboard [{:key :scene}
+                               {:key :key
+                                :coerce (coerce/enum KeyCode)}
+                               {:key :character
+                                :coerce str}]
+    :mouse-robot/press [{:key :buttons
+                         :coerce coerce-mouse-buttons
+                         :default #{:primary}}]
+    :mouse-robot/press-no-wait [{:key :buttons
+                                 :coerce coerce-mouse-buttons
+                                 :default :primary}]
+    :mouse-robot/get-pressed-buttons []
+    :mouse-robot/release [{:key :buttons
+                           :coerce coerce-mouse-buttons
+                           :default :primary}]
+    :mouse-robot/release-no-wait [{:key :buttons
+                                   :coerce coerce-mouse-buttons
+                                   :default :primary}]
+    :mouse-robot/move [{:key :location
+                        :coerce coerce-point2d}]
+    :mouse-robot/move-no-wait [{:key :location
+                                :coerce coerce-point2d}]
+    :mouse-robot/scroll [{:key :wheel-amount
+                          :coerce int}]
+    :mouse-robot/scroll-no-wait [{:key :wheel-amount
+                                  :coerce int}]
 
-#_
-{:testfx/op :key/release
- :button Button}
+    :keyboard-robot/press [{:key :keys :coerce coerce-key-codes}]
+    :keyboard-robot/press-no-wait [{:key :keys :coerce coerce-key-codes}]
+    :keyboard-robot/get-pressed-keys []
+    :keyboard-robot/release [{:key :keys :coerce coerce-key-codes}]
+    :keyboard-robot/release-no-wait [{:key :keys :coerce coerce-key-codes}]
 
-#_
-{:testfx/op :sleep 
- :ms Int}
+    :drag-robot/drag [{:key :point-query
+                       :optional true}
+                      {:key :buttons
+                       :coerce coerce-mouse-buttons}]
+    :drag-robot/drop []
+    :drag-robot/drop-to [{:key :point-query}]
+    :drag-robot/drop-by [{:key :x :coerce double}
+                         {:key :y :coerce double}]
+    
+    ;TODO support 1 & 2 overloads. cannot use :optional on both first two args.
+    :click-robot/click-on [{:key :point-query}
+                           {:key :motion
+                            :coerce coerce-motion}
+                           {:key :buttons
+                            :coerce coerce-mouse-buttons}]
+    :click-robot/double-click-on [{:key :point-query
+                                   :optional true}
+                                  {:key :motion
+                                   :optional true}
+                                  {:key :buttons
+                                   :coerce coerce-mouse-buttons}]
+    
+    ;TODO heavily overloaded
+    :window-finder/target-window []
 
-#_
-{:testfx/op :capture
- :region Rectangle2D
- :out Path}
+    :window-finder/list-windows []
+    :window-finder/list-target-windows []
+
+    ;TODO heavily overloaded
+    ;:window-finder/window []
+    
+    ;TODO heavily overloaded
+    ;:node-finder/lookup []
+
+    :bounds-locator/bounds-in-scene-for [{:key :node}]
+    :bounds-locator/bounds-in-window-for [{:key :bounds-in-scene
+                                           :coerce coerce-bounds
+                                           :optional true}
+                                          {:key :scene}]
+    ;TODO heavily overloaded
+    :bounds-locator/bounds-on-screen-for [{:key :bounds-in-scene
+                                           :coerce coerce-bounds}
+                                          {:key :scene}]
+
+    ;TODO heavily overloaded
+    ;:point-locator/point
+
+    :move-robot/move-to [{:key :point-query}
+                         {:key :motion
+                          :default :default
+                          :coerce coerce-motion}]
+    :move-robot/move-by [{:key :x :coerce double}
+                         {:key :y :coerce double}
+                         {:key :motion
+                          :default :default
+                          :coerce coerce-motion}]
+    ;FIXME this one is weird, chose :ms instead of :milliseconds and
+    ; is overloaded with different names for the first arg
+    :sleep-robot/sleep [{:key :ms :coerce long}]
+
+
+    ;TODO 2-arity is overloaded, called "scroll-amount" above...
+    :scroll-robot/scroll [{:key :amount :coerce int}]
+    ;FIXME these are all actually called "positiveAmount" in TestFX
+    :scroll-robot/scroll-up [{:key :amount :coerce int}]
+    :scroll-robot/scroll-down [{:key :amount :coerce int}]
+    :scroll-robot/scroll-left [{:key :amount :coerce int}]
+    :scroll-robot/scroll-right [{:key :amount :coerce int}]
+
+    ;TODO very weird overloads + varargs
+    ;:type-robot/push []
+    ;Note: ignoring "times" arity
+    :type-robot/type [{:key :key-codes
+                       :coerce coerce-key-codes}]
+
+
+    ;Note: ignore char arity
+    :write-robot/write [{:key :text
+                         :coerce str}
+                        ;Note: TestFX calls this "sleepMillis"
+                        {:key :sleep-ms
+                         :coerce int}]
+
+    :capture-support/capture-node [{:key :node}]
+    :capture-support/capture-region [{:key :region}]
+    :capture-support/load-image [{:key :path}]
+    :capture-support/save-image [{:key :image}
+                                 {:key :path}]
+    
+    ;Note: NYI in TextFX
+    :capture-support/annotate-image [{:key :image}
+                                     {:key :path}]
+    :capture-support/match-images [{:key :image0}
+                                   {:key :image1}
+                                   {:key :pixel-matcher}]))
+
+(defn exec [robot spec]
+  (((:testfx/op spec) exec-specs)
+   (assoc spec :testfx/robot robot)))
+
+(comment
+  (macroexpand-1
+    `(gen-exec-specs
+       :drag-robot/drag [{:key :point-query
+                          :optional true}
+                         {:key :buttons
+                          :coerce coerce-mouse-buttons}]))
+  )
 
 #_
 (deftest robot
@@ -279,6 +487,9 @@
     :scroll-bar javafx.scene.control.ScrollBar,
     :light-point javafx.scene.effect.Light$Point})
 
+(assert (= (set (keys keyword->class-sym))
+           (set (keys cljfx.fx/keyword->lifecycle-delay))))
+
 #_
 (clojure.pprint/pprint (zipmap (keys cljfx.fx/keyword->lifecycle-delay)
              (repeat 'javafx)))
@@ -298,20 +509,21 @@
     `(fn [~instance-sym]
        (~getter-expr ~instance-sym ~@args))))
 
-(getter :button .getText)
-(getter :button :text)
-(getter :button :tex)
-(getter :button .asdf)
+;(getter :button .getText)
+;(getter :button :text)
+;(getter :button :tex)
+;(getter :button .asdf)
 
-{:testfx/assert :button
- :button {:textfx/query :button
-          :lookup ".button"}
- :checks [:is-cancel-button
-          :is-not-cancel-button
-          :is-default-button
-          :is-not-default-button
-          ]
- }
+;{:testfx/assert :button
+; :button {:textfx/query :button
+;          :lookup ".button"}
+; :checks [:is-cancel-button
+;          :is-not-cancel-button
+;          :is-default-button
+;          :is-not-default-button
+;          ]
+; }
+
 
 ;{:testfx/assert :combo-box}
 ;{:testfx/assert :dimension-2d}

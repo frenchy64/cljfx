@@ -21,21 +21,26 @@
         _ (swap! state assoc :cmp cmp)
         robot (testfx/robot)
         _ (swap! state assoc :robot robot)
-        ^javafx.stage.Window window (component/instance cmp)]
+        ^javafx.stage.Window window (fx/instance cmp)]
     ))
 
 (Thread/sleep 1000)
 
 (fx/on-fx-thread
   (let [{:keys [cmp ^FxRobot robot]} @state
-        ^javafx.stage.Window window (component/instance cmp)
-        bounds (.query (.bounds robot
-                                (-> window
-                                    .getScene
-                                    .getRoot)))]
-    (prn "bounds" (bean bounds))
-    ;(.targetWindow robot ^javafx.stage.Window (component/instance cmp))
-    (.clickOn robot bounds (testfx/coerce-motion :direct)
+        ^javafx.stage.Window window (fx/instance cmp)
+        point-query (.point robot
+                            (-> window
+                                .getScene
+                                .getRoot))]
+    (testfx/exec robot
+                 {:testfx/op :click-robot/click-on
+                  :point-query point-query
+                  :motion :direct
+                  :buttons :primary})
+    ;(.targetWindow robot ^javafx.stage.Window (fx/instance cmp))
+    #_
+    (.clickOn robot point-query (testfx/coerce-motion :direct)
               ^"[Ljavafx.scene.input.MouseButton;"
               (into-array javafx.scene.input.MouseButton [javafx.scene.input.MouseButton/PRIMARY]))
     (.type robot ^"[Ljavafx.scene.input.KeyCode;" (into-array javafx.scene.input.KeyCode [(KeyCode/valueOf "A")]))))
