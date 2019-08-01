@@ -3,7 +3,7 @@
             [cljfx.component :as component]
             [cljfx.coerce :as coerce]
             [clojure.string :as str]
-            [clojure.test :as test])
+            [clojure.set :as set])
   (:import [org.testfx.api FxRobot FxRobotContext FxToolkit]
            [org.testfx.robot Motion BaseRobot]
            [javafx.geometry Point2D Bounds]
@@ -44,9 +44,9 @@
   (if (vector? v)
     {:args (into {}
                  (map (fn [{:keys [key] :as arg}]
-                        [key (dissoc arg :key :optional :one-of)]))
+                        [key (dissoc arg :key :optional :one-of :only-with)]))
                  v)
-     :arg-groups #{(mapv #(select-keys % [:optional :key :one-of])
+     :arg-groups #{(mapv #(select-keys % [:optional :key :one-of :only-with])
                          v)}}
     v))
 
@@ -56,14 +56,24 @@
    (let [gen-group-branch* #(gen-group-branch* m meth target arg-impl-map %1 %2)]
      (if (empty? group)
        (concat [meth target] (map (comp arg-impl-map :key) prev))
-       (let [{:keys [key optional one-of] :as fst} (first group)
+       (let [{:keys [key optional one-of only-with] :as fst} (first group)
+             _ (assert (empty? (dissoc fst :key :optional :one-of :only-with))
+                       (str "Invalid spec keys: " (set (keys (dissoc fst :key :optional :one-of :only-with)))))
              _ (assert (map? fst))
              _ (assert (keyword? key))
              _ (assert (not (and optional one-of)))
              expected-pos (or optional one-of)
              _ (assert ((some-fn nil? set?) expected-pos))
-             current-pos (count prev)]
+             current-pos (count prev)
+             missing-deps (when only-with
+                            (not-empty (set/difference only-with
+                                                       (into #{} (map :key) prev))))]
          (cond
+           missing-deps
+           `(throw (ex-info ~(str "Key provided without dependency")
+                            {:key ~key
+                             :dependency ~missing-deps}))
+
            expected-pos
            (let [throw-one-of (fn []
                                 `(throw (ex-info ~(str "Must provide one of keys")
@@ -145,7 +155,7 @@
 (defmacro testfx-specs [& spec-args]
   (gen-exec-specs* testfx-target-fn spec-args))
 
-(defmacro ^:private defn-acoerce [name type coerce]
+(defmacro ^:private defn-acoerce [name type coerce pred]
   (let [class-sym (symbol (.getName ^Class (resolve type)))
         tag (str "[L" class-sym ";")
         name (with-meta name {:tag tag})]
@@ -153,12 +163,13 @@
        (defn ~name [a#]
          (if (instance? t# a#)
            a#
-           (into-array ~class-sym (map ~coerce (if (keyword? a#)
+           (into-array ~class-sym (map ~coerce (if (~pred a#)
                                                  #{a#}
                                                  a#))))))))
 
-(defn-acoerce ^:private coerce-mouse-buttons MouseButton coerce-mouse-button)
-(defn-acoerce ^:private coerce-key-codes KeyCode (coerce/enum KeyCode))
+(defn-acoerce ^:private coerce-mouse-buttons MouseButton coerce-mouse-button keyword?)
+(defn-acoerce ^:private coerce-key-codes KeyCode (coerce/enum KeyCode) keyword?)
+(defn-acoerce ^:private coerce-nodes Node identity (constantly false))
 
 (def exec-specs
   (testfx-specs
@@ -223,21 +234,22 @@
     :drag-robot/drop-by [{:key :x :coerce double}
                          {:key :y :coerce double}]
     
-    ;TODO support 1 & 2 overloads. cannot use :optional on both first two args.
-    :click-robot/click-on [{:key :point-query}
+    :click-robot/click-on [{:key :point-query
+                            :optional #{0}}
                            {:key :motion
-                            :coerce coerce-motion}
+                            :coerce coerce-motion
+                            :optional #{1}}
                            {:key :buttons
                             :coerce coerce-mouse-buttons}]
-    ;TODO support 1 & 2 overloads. cannot use :optional on both first two args.
-    :click-robot/double-click-on [{:key :point-query}
+
+    :click-robot/double-click-on [{:key :point-query
+                                   :optional #{0}}
                                   {:key :motion
-                                   :coerce coerce-motion}
+                                   :coerce coerce-motion
+                                   :optional #{1}}
                                   {:key :buttons
                                    :coerce coerce-mouse-buttons}]
     
-    ;TODO heavily overloaded
-    #_#_
     :window-finder/target-window [{:key :window
                                    :coerce ^javafx.stage.Window identity
                                    :one-of #{0}}
@@ -258,30 +270,96 @@
                                    :one-of #{0}}
                                   {:key :node
                                    :coerce ^Node identity
-                                   :one-of #{0}}
-                                  ]
+                                   :one-of #{0}}]
 
     :window-finder/list-windows []
     :window-finder/list-target-windows []
 
-    ;TODO heavily overloaded
-    ;:window-finder/window []
+    :window-finder/window [{:key :predicate
+                            :coerce ^java.util.function.Predicate identity
+                            :one-of #{0}}
+                           {:key :window-index
+                            :coerce int
+                            :one-of #{0}}
+                           {:key :stage-title-regex
+                            :coerce str
+                            :one-of #{0}}
+                           {:key :stage-title-pattern
+                            :coerce ^java.util.regex.Pattern identity
+                            :one-of #{0}}
+                           {:key :scene
+                            :coerce ^Scene identity
+                            :one-of #{0}}
+                           {:key :node
+                            :coerce ^Node identity
+                            :one-of #{0}}]
     
-    ;TODO heavily overloaded
-    ;:node-finder/lookup []
+    :node-finder/lookup [{:key :query
+                          :coerce str
+                          :one-of #{0}}
+                         {:key :matcher
+                          :coerce ^org.hamcrest.Matcher identity
+                          :one-of #{0}}
+                         {:key :predicate
+                          :coerce ^java.util.function.Predicate identity
+                          :one-of #{0}}]
+
+
+    :node-finder/from-all []
+
+    :node-finder/from [; Note: overloaded Collection arity is identical, so omitted
+                       {:key :parent-nodes
+                        :coerce coerce-nodes
+                        :one-of #{0}}
+                       {:key :node-query
+                        :coerce ^org.testfx.service.query.NodeQuery identity
+                        :one-of #{0}}]
+    :node-finder/root-node [{:key :window
+                             :coerce ^javafx.stage.Window identity 
+                             :one-of #{0}}
+                            {:key :scene
+                             :coerce ^Scene identity 
+                             :one-of #{0}}
+                            {:key :node
+                             :coerce ^Node identity 
+                             :one-of #{0}}]
 
     :bounds-locator/bounds-in-scene-for [{:key :node}]
     :bounds-locator/bounds-in-window-for [{:key :bounds-in-scene
                                            :coerce coerce-bounds
                                            :optional #{0}}
                                           {:key :scene}]
-    ;TODO heavily overloaded
-    :bounds-locator/bounds-on-screen-for [{:key :bounds-in-scene
-                                           :coerce coerce-bounds}
-                                          {:key :scene}]
+    :bounds-locator/bounds-on-screen-for [{:key :node
+                                           :coerce ^Node identity
+                                           :one-of #{0}}
+                                          {:key :scene
+                                           :coerce ^Scene identity
+                                           :one-of #{0}}
+                                          {:key :window
+                                           :coerce ^javafx.stage.Window identity
+                                           :one-of #{0}}
+                                          {:key :bounds-in-scene
+                                           :coerce coerce-bounds
+                                           :one-of #{0}}
+                                          ;TODO test :only-with works
+                                          {:key :scene
+                                           :only-with #{:bounds-in-scene}}]
 
-    ;TODO heavily overloaded
-    ;:point-locator/point
+    :point-locator/point [{:key :bounds
+                           :coerce coerce-bounds
+                           :one-of #{0}}
+                          {:key :point
+                           :coerce coerce-point2d
+                           :one-of #{0}}
+                          {:key :node
+                           :coerce ^Node identity
+                           :one-of #{0}}
+                          {:key :scene
+                           :coerce ^Scene identity
+                           :one-of #{0}}
+                          {:key :window
+                           :coerce ^javafx.stage.Window identity
+                           :one-of #{0}}]
 
     :move-robot/move-to [{:key :point-query}
                          {:key :motion
@@ -292,32 +370,67 @@
                          {:key :motion
                           :default :default
                           :coerce coerce-motion}]
-    ;FIXME this one is weird, chose :ms instead of :milliseconds and
-    ; is overloaded with different names for the first arg
-    :sleep-robot/sleep [{:key :ms :coerce long}]
+
+    :sleep-robot/sleep [{:key :milliseconds
+                         :coerce long
+                         :one-of #{0}}
+                        {:key :duration
+                         :coerce long
+                         :one-of #{0}}
+                        {:key :time-unit
+                         :only-with #{:duration}}]
 
 
-    ;TODO 2-arity is overloaded, called "scroll-amount" above...
-    :scroll-robot/scroll [{:key :amount :coerce int}]
-    ;FIXME these are all actually called "positiveAmount" in TestFX
-    :scroll-robot/scroll-up [{:key :amount :coerce int}]
-    :scroll-robot/scroll-down [{:key :amount :coerce int}]
-    :scroll-robot/scroll-left [{:key :amount :coerce int}]
-    :scroll-robot/scroll-right [{:key :amount :coerce int}]
+    :scroll-robot/scroll [{:key :amount
+                           :coerce int
+                           :one-of #{0}}
+                          {:key :positive-amount
+                           :coerce int
+                           :one-of #{0}}
+                          ; called `direction` in JavaFX
+                          {:key :horizonal-direction
+                           :coerce ^javafx.geometry.HorizontalDirection identity
+                           :only-with #{:positive-amount}
+                           :one-of #{1}}
+                          ; called `direction` in JavaFX
+                          {:key :vertical-direction
+                           :coerce ^javafx.geometry.VerticalDirection identity
+                           :only-with #{:positive-amount}
+                           :one-of #{1}}]
 
-    ;TODO very weird overloads + varargs
-    ;:type-robot/push []
-    ;Note: ignoring "times" arity
+    :scroll-robot/scroll-up [{:key :positive-amount :coerce int}]
+    :scroll-robot/scroll-down [{:key :positive-amount :coerce int}]
+    :scroll-robot/scroll-left [{:key :positive-amount :coerce int}]
+    :scroll-robot/scroll-right [{:key :positive-amount :coerce int}]
+
+    :type-robot/push [; Note: called `combinations` in TestFX
+                      {:key :key-codes
+                       :coerce coerce-key-codes
+                       :one-of #{0}}
+                      ; Note: called `combinations` in TestFX
+                      {:key :key-code-combination
+                       :coerce ^javafx.scene.input.KeyCodeCombination identity
+                       :one-of #{0}}]
     :type-robot/type [{:key :key-codes
-                       :coerce coerce-key-codes}]
+                       :coerce coerce-key-codes
+                       :one-of #{0}}
+                      {:key :key-code
+                       :coerce (coerce/enum KeyCode)
+                       :one-of #{0}}
+                      {:key :times
+                       :coerce int
+                       :only-with #{:key-code}}]
 
 
-    ;Note: ignore char arity
-    :write-robot/write [{:key :text
-                         :coerce str}
-                        ;Note: TestFX calls this "sleepMillis"
-                        {:key :sleep-ms
-                         :coerce int}]
+    :write-robot/write [{:key :character
+                         :coerce char
+                         :one-of #{0}}
+                        {:key :text
+                         :coerce str
+                         :one-of #{0}}
+                        {:key :sleep-millis
+                         :coerce int
+                         :only-with #{:text}}]
 
     :capture-support/capture-node [{:key :node}]
     :capture-support/capture-region [{:key :region}]
