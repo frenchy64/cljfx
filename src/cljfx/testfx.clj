@@ -134,11 +134,14 @@
                             group)))))
 
 (defn- testfx-target-fn [m k]
-  (let [subcontext (keyword (namespace k))]
-    `(let [^FxRobot robot# ~(if (not= subcontext :fx-robot)
-                              `(from-context (:testfx/robot ~m) ~subcontext)
-                              `(:testfx/robot ~m))]
-       robot#)))
+  (let [subcontext (keyword (namespace k))
+        robot (with-meta (gensym 'robot)
+                         {:tag 'org.testfx.api.FxRobot})]
+    `(let [~robot (:testfx/robot ~m)
+           target# ~(if (not= subcontext :fx-robot)
+                      `(from-context ~robot ~subcontext)
+                      robot)]
+       target#)))
 
 (defn- gen-exec-specs* [target-fn spec-args]
   (into {}
@@ -149,45 +152,10 @@
                  [k impl])))
         (partition 2 spec-args)))
 
-;(comment
-  (defmacro tst-general-specs [& spec-args]
-    (gen-exec-specs* (fn [m k]
-                       (let [o (with-meta (gensym 'o)
-                                          {:tag (-> k namespace symbol)})]
-                         `(let [~o (:target ~m)]
-                            ~o)))
-                     spec-args))
-
-  (macroexpand-1 '(tst-general-specs
-                    :java.lang.String/index-of [{:key :ch
-                                                 :coerce int}]))
-
-  (def general-specs
-    (tst-general-specs
-       :java.lang.String/index-of [{:key :ch
-                                    :coerce int}]))
-
-  (defn exec-general-spec [o spec]
-    {:pre [(not (contains? spec :target))]}
-    (((:general/op spec) general-specs)
-     (assoc spec :target o)))
-
-(let [tst #(exec-general-spec "asdf"
-                              {:general/op :java.lang.String/index-of
-                               :ch %})]
-  (assert (= (tst \a) 0))
-  (assert (= (tst \s) 1))
-  (assert (= (tst \d) 2))
-  (assert (= (tst \f) 3))
-  (assert (= (tst \b) -1))
-  )
-  ;)
-
-
 (defmacro testfx-specs [& spec-args]
   (gen-exec-specs* testfx-target-fn spec-args))
 
-(defmacro defn-acoerce [name type coerce]
+(defmacro ^:private defn-acoerce [name type coerce]
   (let [class-sym (symbol (.getName ^Class (resolve type)))
         tag (str "[L" class-sym ";")
         name (with-meta name {:tag tag})]
@@ -199,10 +167,9 @@
                                                  #{a#}
                                                  a#))))))))
 
-(defn-acoerce coerce-mouse-buttons MouseButton coerce-mouse-button)
-(defn-acoerce coerce-key-codes KeyCode (coerce/enum KeyCode))
+(defn-acoerce ^:private coerce-mouse-buttons MouseButton coerce-mouse-button)
+(defn-acoerce ^:private coerce-key-codes KeyCode (coerce/enum KeyCode))
 
-#_
 (def exec-specs
   (testfx-specs
     :base-robot/press-mouse [{:key :button
