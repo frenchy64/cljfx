@@ -716,7 +716,8 @@
                        {:key :buttons
                         :coerce coerce-mouse-buttons
                         :one-of #{0}}]
-    :fx-robot/click-on {:args {:buttons {:coerce coerce-mouse-buttons}
+    :fx-robot/click-on {:args {; :buttons is referenced twice
+                               :buttons {:coerce coerce-mouse-buttons}
                                :point-query {:coerce ^org.testfx.service.query.PointQuery identity}
                                :motion {:coerce coerce-motion}
                                :point {:point coerce-point2d}
@@ -754,7 +755,7 @@
                                        {:key :y
                                         :only-with #{:x}}
                                        {:key :motion
-                                        ; ie., :not-with [#{:buttons}]
+                                        ; allow 1-arg :buttons
                                         :only-with [#{:point-query}
                                                     #{:x :y}
                                                     #{:point}
@@ -767,89 +768,203 @@
                                                     #{:predicate}]}
                                        {:key :buttons
                                         :only-with #{:motion}}]}}
-    :fx-robot/right-click-on {:args {:point-query {:coerce ^org.testfx.service.query.PointQuery identity}
-                                     :motion {:coerce coerce-motion}
-                                     :point {:point coerce-point2d}
-                                     :bounds {:coerce coerce-bounds}
-                                     :node {:coerce ^Node identity}
-                                     :scene {:coerce ^Scene identity}
-                                     :window {:coerce ^javafx.stage.Window identity}
-                                     :query {:coerce str}
-                                     :matcher {:coerce ^org.hamcrest.Matcher identity}
-                                     :predicate {:coerce ^java.util.function.Predicate identity}
-                                     :x {:coerce double}
-                                     :y {:coerce double}}
-                              :arg-groups #{[{:key :point-query
-                                              :optional #{0}}
-                                             {:key :point
-                                              :optional #{0}}
-                                             {:key :bounds
-                                              :optional #{0}}
-                                             {:key :node
-                                              :optional #{0}}
-                                             {:key :scene
-                                              :optional #{0}}
-                                             {:key :window
-                                              :optional #{0}}
-                                             {:key :query
-                                              :optional #{0}}
-                                             {:key :matcher
-                                              :optional #{0}}
-                                             {:key :predicate
-                                              :optional #{0}}
-                                             {:key :x
-                                              :optional #{0}}
-                                             {:key :y
-                                              :only-with #{:x}}
-                                             {:key :motion
-                                              ; ie., :not-with [#{}]
-                                              :only-with [#{:point-query}
-                                                          #{:x :y}
-                                                          #{:point}
-                                                          #{:bounds}
-                                                          #{:node}
-                                                          #{:scene}
-                                                          #{:window}
-                                                          #{:query}
-                                                          #{:matcher}
-                                                          #{:predicate}]}]}}
-    :fx-robot/double-click-on {:args {:buttons {:coerce coerce-mouse-buttons}
-                                      :point-query {:coerce ^org.testfx.service.query.PointQuery identity}
-                                      :motion {:coerce coerce-motion}
-                                      :point {:point coerce-point2d}
-                                      :bounds {:coerce coerce-bounds}
-                                      :node {:coerce ^Node identity}
-                                      :scene {:coerce ^Scene identity}
-                                      :window {:coerce ^javafx.stage.Window identity}
-                                      :query {:coerce str}
-                                      :matcher {:coerce ^org.hamcrest.Matcher identity}
-                                      :predicate {:coerce ^java.util.function.Predicate identity}
-                                      :x {:coerce double}
-                                      :y {:coerce double}}
-                               :arg-groups #{[{:key :point-query
-                                               :one-of #{0}}
-                                              {:key :point
-                                               :one-of #{0}}
-                                              {:key :bounds
-                                               :one-of #{0}}
-                                              {:key :node
-                                               :one-of #{0}}
-                                              {:key :scene
-                                               :one-of #{0}}
-                                              {:key :window
-                                               :one-of #{0}}
-                                              {:key :query
-                                               :one-of #{0}}
-                                              {:key :matcher
-                                               :one-of #{0}}
-                                              {:key :predicate
-                                               :one-of #{0}}
-                                              {:key :x
-                                               :one-of #{0}}
-                                              {:key :y
-                                               :only-with #{:x}}
-                                              {:key :motion}
-                                              {:key :buttons}]}}
+    :fx-robot/right-click-on [{:key :point-query
+                               :coerce ^org.testfx.service.query.PointQuery identity
+                               :optional #{0}}
+                              {:key :point
+                               :point coerce-point2d
+                               :optional #{0}}
+                              {:key :bounds
+                               :coerce coerce-bounds
+                               :optional #{0}}
+                              {:key :node
+                               :coerce ^Node identity
+                               :optional #{0}}
+                              {:key :scene
+                               :coerce ^Scene identity
+                               :optional #{0}}
+                              {:key :window
+                               :coerce ^javafx.stage.Window identity
+                               :optional #{0}}
+                              {:key :query
+                               :coerce str
+                               :optional #{0}}
+                              {:key :matcher
+                               :coerce ^org.hamcrest.Matcher identity
+                               :optional #{0}}
+                              {:key :predicate
+                               :coerce ^java.util.function.Predicate identity
+                               :optional #{0}}
+                              {:key :x
+                               :coerce double
+                               :optional #{0}}
+                              {:key :y
+                               :coerce double
+                               :only-with #{:x}}
+                              {:key :motion
+                               :coerce coerce-motion
+                               ; allow zero-arg case, but otherwise required
+                               :only-with [#{:point-query}
+                                           #{:x :y}
+                                           #{:point}
+                                           #{:bounds}
+                                           #{:node}
+                                           #{:scene}
+                                           #{:window}
+                                           #{:query}
+                                           #{:matcher}
+                                           #{:predicate}]}]
+    :fx-robot/double-click-on [{:key :point-query
+                                :coerce ^org.testfx.service.query.PointQuery identity
+                                :one-of #{0}}
+                               {:key :point
+                                :point coerce-point2d
+                                :one-of #{0}}
+                               {:key :bounds
+                                :coerce coerce-bounds
+                                :one-of #{0}}
+                               {:key :node
+                                :coerce ^Node identity
+                                :one-of #{0}}
+                               {:key :scene
+                                :coerce ^Scene identity
+                                :one-of #{0}}
+                               {:key :window
+                                :coerce ^javafx.stage.Window identity
+                                :one-of #{0}}
+                               {:key :query
+                                :coerce str
+                                :one-of #{0}}
+                               {:key :matcher
+                                :coerce ^org.hamcrest.Matcher identity
+                                :one-of #{0}}
+                               {:key :predicate
+                                :coerce ^java.util.function.Predicate identity
+                                :one-of #{0}}
+                               {:key :x
+                                :coerce double
+                                :one-of #{0}}
+                               {:key :y
+                                :coerce double
+                                :only-with #{:x}}
+                               {:key :motion
+                                :coerce coerce-motion}
+                               {:key :buttons
+                                :coerce coerce-mouse-buttons}]
+    :fx-robot/drag [{:key :point-query
+                     :coerce ^org.testfx.service.query.PointQuery identity
+                     :optional #{0}}
+                    {:key :point
+                     :point coerce-point2d
+                     :optional #{0}}
+                    {:key :bounds
+                     :coerce coerce-bounds
+                     :optional #{0}}
+                    {:key :node
+                     :coerce ^Node identity
+                     :optional #{0}}
+                    {:key :scene
+                     :coerce ^Scene identity
+                     :optional #{0}}
+                    {:key :window
+                     :coerce ^javafx.stage.Window identity
+                     :optional #{0}}
+                    {:key :query
+                     :coerce str
+                     :optional #{0}}
+                    {:key :matcher
+                     :coerce ^org.hamcrest.Matcher identity
+                     :optional #{0}}
+                    {:key :predicate
+                     :coerce ^java.util.function.Predicate identity
+                     :optional #{0}}
+                    {:key :x
+                     :coerce double
+                     :optional #{0}}
+                    {:key :y
+                     :coerce double
+                     :only-with #{:x}}
+                    ; has 1-arity version with just buttons
+                    {:key :buttons
+                     :coerce coerce-mouse-buttons}]
+    :fx-robot/drop []
+    :fx-robot/drop-to [{:key :point-query
+                        :coerce ^org.testfx.service.query.PointQuery identity
+                        :one-of #{0}}
+                       {:key :point
+                        :coerce coerce-point2d
+                        :one-of #{0}}
+                       {:key :bounds
+                        :coerce coerce-bounds
+                        :one-of #{0}}
+                       {:key :node
+                        :coerce ^Node identity
+                        :one-of #{0}}
+                       {:key :scene
+                        :coerce ^Scene identity
+                        :one-of #{0}}
+                       {:key :window
+                        :coerce ^javafx.stage.Window identity
+                        :one-of #{0}}
+                       {:key :query
+                        :coerce str
+                        :one-of #{0}}
+                       {:key :matcher
+                        :coerce ^org.hamcrest.Matcher identity
+                        :one-of #{0}}
+                       {:key :predicate
+                        :coerce ^java.util.function.Predicate identity
+                        :one-of #{0}}
+                       {:key :x
+                        :coerce double
+                        :one-of #{0}}
+                       {:key :y
+                        :coerce double
+                        :only-with #{:x}}]
+
+    :fx-robot/drop-by [{:key :x :coerce double}
+                       {:key :y :coerce double}]
+
+    :fx-robot/move-to [{:key :point-query
+                        :coerce ^org.testfx.service.query.PointQuery identity
+                        :one-of #{0}}
+                       {:key :point
+                        :coerce coerce-point2d
+                        :one-of #{0}}
+                       {:key :bounds
+                        :coerce coerce-bounds
+                        :one-of #{0}}
+                       {:key :node
+                        :coerce ^Node identity
+                        :one-of #{0}}
+                       {:key :scene
+                        :coerce ^Scene identity
+                        :one-of #{0}}
+                       {:key :window
+                        :coerce ^javafx.stage.Window identity
+                        :one-of #{0}}
+                       {:key :query
+                        :coerce str
+                        :one-of #{0}}
+                       {:key :matcher
+                        :coerce ^org.hamcrest.Matcher identity
+                        :one-of #{0}}
+                       {:key :predicate
+                        :coerce ^java.util.function.Predicate identity
+                        :one-of #{0}}
+                       {:key :x
+                        :coerce double
+                        :one-of #{0}}
+                       {:key :y
+                        :coerce double
+                        :only-with #{:x}}
+                       {:key :offset-reference-pos
+                        :only-with #{:node}}
+                       {:key :offset
+                        :only-with #{:node}}
+                       {:key :motion
+                        :default :default
+                        :coerce coerce-motion}]
 ))
 
 (defn exec [robot spec]
