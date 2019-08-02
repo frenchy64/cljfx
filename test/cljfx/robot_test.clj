@@ -482,3 +482,24 @@
                  ["Ingredients" "Fireberries"]])))
       (teardown)
       )))
+
+(deftest e14-charts
+  (let []
+    (testfx/with-robot
+      (require 'e14-charts :reload)
+      (attach)
+
+      (apply testfx/exec
+             (map click
+                  (concat
+                    (shuffle
+                      ["Area Chart"
+                       "Bar Chart"
+                       "Bubble Chart"
+                       "Line Chart"
+                       "Scatter Chart"
+                       "Stacked Area Chart"
+                       "Stacked Bar Chart"])
+                    ["Pie Chart"])))
+
+      (teardown))))
