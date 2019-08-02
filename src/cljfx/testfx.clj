@@ -232,7 +232,7 @@
 (defn-acoerce ^:private coerce-key-codes KeyCode (coerce/enum KeyCode) keyword?)
 (defn-acoerce ^:private coerce-nodes Node identity (constantly false))
 
-(declare exec1)
+(declare exec)
 
 (defn- ^org.testfx.service.query.PointQuery coerce-point-query [v]
   (if (and (map? v)
@@ -358,25 +358,25 @@
     
     :window-finder/target-window [{:key :window
                                    :coerce coerce-window
-                                   :one-of #{0}}
+                                   :optional #{0}}
                                   {:key :predicate
                                    :coerce coerce-predicate
-                                   :one-of #{0}}
+                                   :optional #{0}}
                                   {:key :window-index
                                    :coerce int
-                                   :one-of #{0}}
+                                   :optional #{0}}
                                   {:key :stage-title-regex
                                    :coerce str
-                                   :one-of #{0}}
+                                   :optional #{0}}
                                   {:key :stage-title-pattern
                                    :coerce re-pattern
-                                   :one-of #{0}}
+                                   :optional #{0}}
                                   {:key :scene
                                    :coerce coerce-scene
-                                   :one-of #{0}}
+                                   :optional #{0}}
                                   {:key :node
                                    :coerce coerce-node
-                                   :one-of #{0}}]
+                                   :optional #{0}}]
 
     :window-finder/list-windows []
     :window-finder/list-target-windows []
@@ -560,25 +560,25 @@
 
     :fx-robot/target-window [{:key :window
                               :coerce coerce-window
-                              :one-of #{0}}
+                              :optional #{0}}
                              {:key :predicate
                               :coerce coerce-predicate
-                              :one-of #{0}}
+                              :optional #{0}}
                              {:key :window-index
                               :coerce int
-                              :one-of #{0}}
+                              :optional #{0}}
                              {:key :stage-title-regex
                               :coerce str
-                              :one-of #{0}}
+                              :optional #{0}}
                              {:key :stage-title-pattern
                               :coerce re-pattern
-                              :one-of #{0}}
+                              :optional #{0}}
                              {:key :scene
                               :coerce coerce-scene
-                              :one-of #{0}}
+                              :optional #{0}}
                              {:key :node
                               :coerce coerce-node
-                              :one-of #{0}}]
+                              :optional #{0}}]
     :fx-robot/list-windows []
     :fx-robot/list-target-windows []
 
@@ -1072,8 +1072,10 @@
    (((:testfx/op spec) exec-specs)
     (assoc spec :testfx/robot robot))))
 
-(defn exec [& specs]
-  (reduce (fn [ret spec]
+(defn exec
+  "Run specs sequentially. Returns the final value."
+  [& specs]
+  (reduce (fn [_ spec]
             (exec1 spec))
           nil
           specs))
@@ -1267,6 +1269,21 @@
                                fx/instance
                                resolve-node-query)]
          (~getter-expr ~instance-sym ~@args)))))
+
+(defmacro setter [cls meth & args]
+  (let [instance-sym (with-meta (gensym "instance") {:tag (if (keyword? cls)
+                                                            (keyword->class-sym cls)
+                                                            cls)})
+        setter-expr (if (keyword? meth)
+                      (symbol (apply str ".set" (map str/capitalize (-> meth
+                                                                        name
+                                                                        (str/split #"-")))))
+                      meth)]
+    `(fn [~instance-sym]
+       (let [~instance-sym (-> ~instance-sym
+                               fx/instance
+                               resolve-node-query)]
+         (~setter-expr ~instance-sym ~@args)))))
 
 ;(getter :button .getText)
 ;(getter :button :text)
