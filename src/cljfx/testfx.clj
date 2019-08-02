@@ -17,10 +17,9 @@
 (defn create-robot []
   (FxRobot.))
 
-(defmacro with-testfx [& args]
-  `(fx/on-fx-thread
-     (binding [*robot* (create-robot)]
-       ~@args)))
+(defmacro with-robot [& args]
+  `(binding [*robot* (create-robot)]
+     ~@args))
 
 (def ^:private ^Motion coerce-motion (coerce/enum Motion))
 
@@ -241,6 +240,17 @@
     (exec v)
     v))
 
+(defn- ^org.testfx.service.query.NodeQuery coerce-node-query [v]
+  (if (and (map? v)
+           (keyword? (:testfx/op v)))
+    (exec v)
+    v))
+
+(defn resolve-node-query [^org.testfx.service.query.NodeQuery v]
+  (if (instance? org.testfx.service.query.NodeQuery v)
+    (.query v)
+    v))
+
 (defn- ^Node coerce-node [n] (fx/instance n))
 (defn- ^javafx.stage.Window coerce-window [n] (fx/instance n))
 (defn- ^Scene coerce-scene [n] (fx/instance n))
@@ -248,9 +258,15 @@
 (defn- ^java.util.function.Predicate coerce-predicate [f]
   (if (instance? java.util.function.Predicate f)
     f
-    (reify java.util.function.Predicate
-      (test [_ t]
-        (boolean (f t))))))
+    (if (fn? f)
+      (reify java.util.function.Predicate
+        (test [_ t]
+          (boolean (f t))))
+      ; idea: compile something more interesting from maps
+      ; eg. {:predicate {:textfx/op :getter
+      ;                  :fx/type :button
+      ;                  :prop :text}}
+      (coerce/fail java.util.function.Predicate f))))
 
 (def ^javafx.geometry.HorizontalDirection coerce-horizontal-direction (coerce/enum javafx.geometry.HorizontalDirection))
 (def ^javafx.geometry.VerticalDirection coerce-vertical-direction (coerce/enum javafx.geometry.VerticalDirection))
@@ -402,7 +418,7 @@
                         :coerce coerce-nodes
                         :one-of #{0}}
                        {:key :node-query
-                        :coerce ^org.testfx.service.query.NodeQuery identity
+                        :coerce coerce-node-query
                         :one-of #{0}}]
     :node-finder/root-node [{:key :window
                              :coerce coerce-window
@@ -590,7 +606,7 @@
                      :coerce coerce-nodes
                      :one-of #{0}}
                     {:key :node-query
-                     :coerce ^org.testfx.service.query.NodeQuery identity
+                     :coerce coerce-node-query
                      :one-of #{0}}]
     :fx-robot/lookup [{:key :query
                        :coerce str
@@ -1247,7 +1263,9 @@
                                                                         (str/split #"-")))))
                       meth)]
     `(fn [~instance-sym]
-       (let [~instance-sym (fx/instance ~instance-sym)]
+       (let [~instance-sym (-> ~instance-sym
+                               fx/instance
+                               resolve-node-query)]
          (~getter-expr ~instance-sym ~@args)))))
 
 ;(getter :button .getText)
