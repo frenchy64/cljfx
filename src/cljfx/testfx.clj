@@ -241,6 +241,20 @@
     (exec v)
     v))
 
+(defn- ^Node coerce-node [n] (fx/instance n))
+(defn- ^javafx.stage.Window coerce-window [n] (fx/instance n))
+(defn- ^Scene coerce-scene [n] (fx/instance n))
+
+(defn- ^java.util.function.Predicate coerce-predicate [f]
+  (if (instance? java.util.function.Predicate f)
+    f
+    (reify java.util.function.Predicate
+      (test [_ t]
+        (boolean (f t))))))
+
+(def ^javafx.geometry.HorizontalDirection coerce-horizontal-direction (coerce/enum javafx.geometry.HorizontalDirection))
+(def ^javafx.geometry.VerticalDirection coerce-vertical-direction (coerce/enum javafx.geometry.VerticalDirection))
+
 (def exec-specs
   (testfx-specs
     :base-robot/press-mouse [{:key :button
@@ -262,7 +276,8 @@
     :base-robot/release-keyboard [{:key :key
                                    :coerce (coerce/enum KeyCode)}]
 
-    :base-robot/type-keyboard [{:key :scene}
+    :base-robot/type-keyboard [{:key :scene
+                                :coerce coerce-scene}
                                {:key :key
                                 :coerce (coerce/enum KeyCode)}
                                {:key :character
@@ -326,10 +341,10 @@
                                    :coerce coerce-mouse-buttons}]
     
     :window-finder/target-window [{:key :window
-                                   :coerce ^javafx.stage.Window identity
+                                   :coerce coerce-window
                                    :one-of #{0}}
                                   {:key :predicate
-                                   :coerce ^java.util.function.Predicate identity
+                                   :coerce coerce-predicate
                                    :one-of #{0}}
                                   {:key :window-index
                                    :coerce int
@@ -338,20 +353,20 @@
                                    :coerce str
                                    :one-of #{0}}
                                   {:key :stage-title-pattern
-                                   :coerce ^java.util.regex.Pattern identity
+                                   :coerce re-pattern
                                    :one-of #{0}}
                                   {:key :scene
-                                   :coerce ^Scene identity
+                                   :coerce coerce-scene
                                    :one-of #{0}}
                                   {:key :node
-                                   :coerce ^Node identity
+                                   :coerce coerce-node
                                    :one-of #{0}}]
 
     :window-finder/list-windows []
     :window-finder/list-target-windows []
 
     :window-finder/window [{:key :predicate
-                            :coerce ^java.util.function.Predicate identity
+                            :coerce coerce-predicate
                             :one-of #{0}}
                            {:key :window-index
                             :coerce int
@@ -360,13 +375,13 @@
                             :coerce str
                             :one-of #{0}}
                            {:key :stage-title-pattern
-                            :coerce ^java.util.regex.Pattern identity
+                            :coerce re-pattern
                             :one-of #{0}}
                            {:key :scene
-                            :coerce ^Scene identity
+                            :coerce coerce-scene
                             :one-of #{0}}
                            {:key :node
-                            :coerce ^Node identity
+                            :coerce coerce-node
                             :one-of #{0}}]
     
     :node-finder/lookup [{:key :query
@@ -376,7 +391,7 @@
                           :coerce ^org.hamcrest.Matcher identity
                           :one-of #{0}}
                          {:key :predicate
-                          :coerce ^java.util.function.Predicate identity
+                          :coerce coerce-predicate
                           :one-of #{0}}]
 
 
@@ -390,23 +405,25 @@
                         :coerce ^org.testfx.service.query.NodeQuery identity
                         :one-of #{0}}]
     :node-finder/root-node [{:key :window
-                             :coerce ^javafx.stage.Window identity 
+                             :coerce coerce-window
                              :one-of #{0}}
                             {:key :scene
-                             :coerce ^Scene identity 
+                             :coerce coerce-scene
                              :one-of #{0}}
                             {:key :node
-                             :coerce ^Node identity 
+                             :coerce coerce-node
                              :one-of #{0}}]
 
-    :bounds-locator/bounds-in-scene-for [{:key :node}]
+    :bounds-locator/bounds-in-scene-for [{:key :node
+                                          :coerce coerce-node}]
     :bounds-locator/bounds-in-window-for [{:key :bounds-in-scene
                                            :coerce coerce-bounds
                                            :optional #{0}}
-                                          {:key :scene}]
-    :bounds-locator/bounds-on-screen-for {:args {:node {:coerce ^Node identity}
-                                                 :scene {:coerce ^Scene identity}
-                                                 :window {:coerce ^javafx.stage.Window identity}
+                                          {:key :scene
+                                           :coerce coerce-scene}]
+    :bounds-locator/bounds-on-screen-for {:args {:node {:coerce coerce-node}
+                                                 :scene {:coerce coerce-scene}
+                                                 :window {:coerce coerce-window}
                                                  :bounds-in-scene {:coerce coerce-bounds}}
                                           ; :scene occurs twice
                                           :arg-groups #{[{:key :node
@@ -427,13 +444,13 @@
                            :coerce coerce-point2d
                            :one-of #{0}}
                           {:key :node
-                           :coerce ^Node identity
+                           :coerce coerce-node
                            :one-of #{0}}
                           {:key :scene
-                           :coerce ^Scene identity
+                           :coerce coerce-scene
                            :one-of #{0}}
                           {:key :window
-                           :coerce ^javafx.stage.Window identity
+                           :coerce coerce-window
                            :one-of #{0}}]
 
     :move-robot/move-to [{:key :point-query
@@ -465,12 +482,12 @@
                            :one-of #{0}}
                           ; called `direction` in JavaFX
                           {:key :horizonal-direction
-                           :coerce ^javafx.geometry.HorizontalDirection identity
+                           :coerce coerce-horizontal-direction
                            :only-with #{:positive-amount}
                            :one-of #{1}}
                           ; called `direction` in JavaFX
                           {:key :vertical-direction
-                           :coerce ^javafx.geometry.VerticalDirection identity
+                           :coerce coerce-vertical-direction
                            :only-with #{:positive-amount}
                            :one-of #{1}}]
 
@@ -509,7 +526,8 @@
                          :coerce int
                          :only-with #{:text}}]
 
-    :capture-support/capture-node [{:key :node}]
+    :capture-support/capture-node [{:key :node
+                                    :coerce coerce-node}]
     :capture-support/capture-region [{:key :region
                                       :coerce coerce/rectangle-2d}]
     :capture-support/load-image [{:key :path}]
@@ -525,10 +543,10 @@
                                    {:key :pixel-matcher}]
 
     :fx-robot/target-window [{:key :window
-                              :coerce ^javafx.stage.Window identity
+                              :coerce coerce-window
                               :one-of #{0}}
                              {:key :predicate
-                              :coerce ^java.util.function.Predicate identity
+                              :coerce coerce-predicate
                               :one-of #{0}}
                              {:key :window-index
                               :coerce int
@@ -537,19 +555,19 @@
                               :coerce str
                               :one-of #{0}}
                              {:key :stage-title-pattern
-                              :coerce ^java.util.regex.Pattern identity
+                              :coerce re-pattern
                               :one-of #{0}}
                              {:key :scene
-                              :coerce ^Scene identity
+                              :coerce coerce-scene
                               :one-of #{0}}
                              {:key :node
-                              :coerce ^Node identity
+                              :coerce coerce-node
                               :one-of #{0}}]
     :fx-robot/list-windows []
     :fx-robot/list-target-windows []
 
     :fx-robot/window [{:key :predicate
-                       :coerce ^java.util.function.Predicate identity
+                       :coerce coerce-predicate
                        :one-of #{0}}
                       {:key :window-index
                        :coerce int
@@ -558,22 +576,22 @@
                        :coerce str
                        :one-of #{0}}
                       {:key :stage-title-pattern
-                       :coerce ^java.util.regex.Pattern identity
+                       :coerce re-pattern
                        :one-of #{0}}
                       {:key :scene
-                       :coerce ^Scene identity
+                       :coerce coerce-scene
                        :one-of #{0}}
                       {:key :node
-                       :coerce ^Node identity
+                       :coerce coerce-node
                        :one-of #{0}}]
     :fx-robot/from-all []
     :fx-robot/from [; Note: overloaded Collection arity is identical, so omitted
-                       {:key :parent-nodes
-                        :coerce coerce-nodes
-                        :one-of #{0}}
-                       {:key :node-query
-                        :coerce ^org.testfx.service.query.NodeQuery identity
-                        :one-of #{0}}]
+                    {:key :parent-nodes
+                     :coerce coerce-nodes
+                     :one-of #{0}}
+                    {:key :node-query
+                     :coerce ^org.testfx.service.query.NodeQuery identity
+                     :one-of #{0}}]
     :fx-robot/lookup [{:key :query
                        :coerce str
                        :one-of #{0}}
@@ -581,16 +599,16 @@
                        :coerce ^org.hamcrest.Matcher identity
                        :one-of #{0}}
                       {:key :predicate
-                       :coerce ^java.util.function.Predicate identity
+                       :coerce coerce-predicate
                        :one-of #{0}}]
     :fx-robot/root-node [{:key :window
-                          :coerce ^javafx.stage.Window identity 
+                          :coerce coerce-window
                           :one-of #{0}}
                          {:key :scene
-                          :coerce ^Scene identity 
+                          :coerce coerce-scene
                           :one-of #{0}}
                          {:key :node
-                          :coerce ^Node identity 
+                          :coerce coerce-node
                           :one-of #{0}}]
     :fx-robot/bounds [{:key :point
                        :coerce coerce-point2d
@@ -599,13 +617,13 @@
                        :coerce coerce-bounds
                        :one-of #{0}}
                       {:key :node
-                       :coerce ^Node identity
+                       :coerce coerce-node
                        :one-of #{0}}
                       {:key :scene
-                       :coerce ^Scene identity
+                       :coerce coerce-scene
                        :one-of #{0}}
                       {:key :window
-                       :coerce ^javafx.stage.Window identity
+                       :coerce coerce-window
                        :one-of #{0}}
                       {:key :min-x
                        :coerce double
@@ -628,13 +646,13 @@
                       :coerce coerce-bounds
                       :one-of #{0}}
                      {:key :node
-                      :coerce ^Node identity
+                      :coerce coerce-node
                       :one-of #{0}}
                      {:key :scene
-                      :coerce ^Scene identity
+                      :coerce coerce-scene
                       :one-of #{0}}
                      {:key :window
-                      :coerce ^javafx.stage.Window identity
+                      :coerce coerce-window
                       :one-of #{0}}
                      {:key :query
                       :coerce str
@@ -643,7 +661,7 @@
                       :coerce ^org.hamcrest.Matcher identity
                       :one-of #{0}}
                      {:key :predicate
-                      :coerce ^java.util.function.Predicate identity
+                      :coerce coerce-predicate
                       :one-of #{0}}
                      {:key :x
                       :coerce double
@@ -658,10 +676,10 @@
                        :coerce coerce-bounds
                        :one-of #{0}}
                       {:key :scene
-                       :coerce ^Scene identity
+                       :coerce coerce-scene
                        :one-of #{0}}
                       {:key :window
-                       :coerce ^javafx.stage.Window identity
+                       :coerce coerce-window
                        :one-of #{0}}
                       {:key :query
                        :coerce str
@@ -670,10 +688,10 @@
                        :coerce ^org.hamcrest.Matcher identity
                        :one-of #{0}}
                       {:key :predicate
-                       :coerce ^java.util.function.Predicate identity
+                       :coerce coerce-predicate
                        :one-of #{0}}
                       {:key :node
-                       :coerce ^Node identity
+                       :coerce coerce-node
                        :one-of #{0}}
                       {:key :offset-reference-pos
                        :coerce ^javafx.geometry.Pos identity
@@ -689,7 +707,7 @@
                         :coerce coerce-bounds
                         :one-of #{0}}
                        {:key :node
-                        :coerce ^Node identity
+                        :coerce coerce-node
                         :one-of #{0}}
                        {:key :image
                         :coerce ^javafx.scene.image.Image identity
@@ -764,11 +782,11 @@
                        :default 1}
                       ; called `direction` in JavaFX
                       {:key :horizonal-direction
-                       :coerce ^javafx.geometry.HorizontalDirection identity
+                       :coerce coerce-horizontal-direction
                        :optional #{1}}
                       ; called `direction` in JavaFX
                       {:key :vertical-direction
-                       :coerce ^javafx.geometry.VerticalDirection identity
+                       :coerce coerce-vertical-direction
                        :optional #{1}}]
     :fx-robot/press [{:key :keys
                       :coerce coerce-key-codes
@@ -792,13 +810,13 @@
                          :coerce coerce-bounds
                          :optional #{0}}
                         {:key :node
-                         :coerce ^Node identity
+                         :coerce coerce-node
                          :optional #{0}}
                         {:key :scene
-                         :coerce ^Scene identity
+                         :coerce coerce-scene
                          :optional #{0}}
                         {:key :window
-                         :coerce ^javafx.stage.Window identity
+                         :coerce coerce-window
                          :optional #{0}}
                         {:key :query
                          :coerce str
@@ -807,7 +825,7 @@
                          :coerce ^org.hamcrest.Matcher identity
                          :optional #{0}}
                         {:key :predicate
-                         :coerce ^java.util.function.Predicate identity
+                         :coerce coerce-predicate
                          :optional #{0}}
                         {:key :x
                          :coerce double
@@ -840,13 +858,13 @@
                                :coerce coerce-bounds
                                :optional #{0}}
                               {:key :node
-                               :coerce ^Node identity
+                               :coerce coerce-node
                                :optional #{0}}
                               {:key :scene
-                               :coerce ^Scene identity
+                               :coerce coerce-scene
                                :optional #{0}}
                               {:key :window
-                               :coerce ^javafx.stage.Window identity
+                               :coerce coerce-window
                                :optional #{0}}
                               {:key :query
                                :coerce str
@@ -855,7 +873,7 @@
                                :coerce ^org.hamcrest.Matcher identity
                                :optional #{0}}
                               {:key :predicate
-                               :coerce ^java.util.function.Predicate identity
+                               :coerce coerce-predicate
                                :optional #{0}}
                               {:key :x
                                :coerce double
@@ -886,13 +904,13 @@
                                 :coerce coerce-bounds
                                 :one-of #{0}}
                                {:key :node
-                                :coerce ^Node identity
+                                :coerce coerce-node
                                 :one-of #{0}}
                                {:key :scene
-                                :coerce ^Scene identity
+                                :coerce coerce-scene
                                 :one-of #{0}}
                                {:key :window
-                                :coerce ^javafx.stage.Window identity
+                                :coerce coerce-window
                                 :one-of #{0}}
                                {:key :query
                                 :coerce str
@@ -901,7 +919,7 @@
                                 :coerce ^org.hamcrest.Matcher identity
                                 :one-of #{0}}
                                {:key :predicate
-                                :coerce ^java.util.function.Predicate identity
+                                :coerce coerce-predicate
                                 :one-of #{0}}
                                {:key :x
                                 :coerce double
@@ -923,13 +941,13 @@
                      :coerce coerce-bounds
                      :optional #{0}}
                     {:key :node
-                     :coerce ^Node identity
+                     :coerce coerce-node
                      :optional #{0}}
                     {:key :scene
-                     :coerce ^Scene identity
+                     :coerce coerce-scene
                      :optional #{0}}
                     {:key :window
-                     :coerce ^javafx.stage.Window identity
+                     :coerce coerce-window
                      :optional #{0}}
                     {:key :query
                      :coerce str
@@ -938,7 +956,7 @@
                      :coerce ^org.hamcrest.Matcher identity
                      :optional #{0}}
                     {:key :predicate
-                     :coerce ^java.util.function.Predicate identity
+                     :coerce coerce-predicate
                      :optional #{0}}
                     {:key :x
                      :coerce double
@@ -960,13 +978,13 @@
                         :coerce coerce-bounds
                         :one-of #{0}}
                        {:key :node
-                        :coerce ^Node identity
+                        :coerce coerce-node
                         :one-of #{0}}
                        {:key :scene
-                        :coerce ^Scene identity
+                        :coerce coerce-scene
                         :one-of #{0}}
                        {:key :window
-                        :coerce ^javafx.stage.Window identity
+                        :coerce coerce-window
                         :one-of #{0}}
                        {:key :query
                         :coerce str
@@ -975,7 +993,7 @@
                         :coerce ^org.hamcrest.Matcher identity
                         :one-of #{0}}
                        {:key :predicate
-                        :coerce ^java.util.function.Predicate identity
+                        :coerce coerce-predicate
                         :one-of #{0}}
                        {:key :x
                         :coerce double
@@ -997,13 +1015,13 @@
                         :coerce coerce-bounds
                         :one-of #{0}}
                        {:key :node
-                        :coerce ^Node identity
+                        :coerce coerce-node
                         :one-of #{0}}
                        {:key :scene
-                        :coerce ^Scene identity
+                        :coerce coerce-scene
                         :one-of #{0}}
                        {:key :window
-                        :coerce ^javafx.stage.Window identity
+                        :coerce coerce-window
                         :one-of #{0}}
                        {:key :query
                         :coerce str
@@ -1012,7 +1030,7 @@
                         :coerce ^org.hamcrest.Matcher identity
                         :one-of #{0}}
                        {:key :predicate
-                        :coerce ^java.util.function.Predicate identity
+                        :coerce coerce-predicate
                         :one-of #{0}}
                        {:key :x
                         :coerce double
