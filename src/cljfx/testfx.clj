@@ -76,12 +76,16 @@
                             (some #(not-empty (set/difference % (into #{} (map :key) prev)))
                                   (if (set? only-with)
                                     [only-with]
-                                    only-with)))]
+                                    only-with)))
+             dispose #(gen-group-branch* prev (subvec group 1))]
          (cond
-           missing-deps
-           `(throw (ex-info ~(str "Key provided without dependency")
-                            {:key ~key
-                             :dependency ~missing-deps}))
+           (and missing-deps expected-pos)
+           `(if (contains? ~m ~key)
+              (throw (ex-info ~(str "Key provided without dependency")
+                              {:key ~key
+                               :missing-dependency ~missing-deps
+                               :others ~(into #{} (map :key) prev)}))
+              ~(dispose))
 
            expected-pos
            (let [throw-one-of (fn []
@@ -100,8 +104,7 @@
                                                                     (comp (filter (comp #{one-of} :one-of))
                                                                           (map :key))
                                                                     prev)
-                                                              key)})))
-                 dispose #(gen-group-branch* prev (subvec group 1))]
+                                                              key)})))]
              (if (contains? expected-pos current-pos)
                `(if (contains? ~m ~key)
                   ~(gen-group-branch* (conj prev fst) (subvec group 1))
@@ -116,14 +119,11 @@
              (gen-group-branch* (conj prev fst) (subvec group 1))))))))
 
 (defn- gen-group-branch
-  ([k target-fn args group]
+  ([k target-fn meth-fn args group]
    (assert (every? args (map :key group))
            (str "Missing entry for keys: " (set/difference (set (map :key group))
                                                            (set (keys args)))))
-   (let [meth (let [[fst & nxt] (-> k
-                                    name
-                                    (str/split #"-"))]
-                            (symbol (apply str "." fst (map str/capitalize nxt))))
+   (let [meth (meth-fn k)
          m (gensym 'm)
          arg-impl-map (into {}
                             (map (fn [[key {:keys [default] :as arg}]]
@@ -141,6 +141,12 @@
                             []
                             group)))))
 
+(defn- testfx-meth-fn [k]
+  (let [[fst & nxt] (-> k
+                        name
+                        (str/split #"-"))]
+    (symbol (apply str "." fst (map str/capitalize nxt)))))
+
 (defn- testfx-target-fn [m k]
   (let [subcontext (keyword (namespace k))
         robot (with-meta (gensym 'robot)
@@ -155,7 +161,7 @@
   (assert (#{1} (count groups))
           "Ambiguous grouping"))
 
-(defn- gen-exec-specs* [target-fn spec-args]
+(defn- gen-exec-specs* [target-fn meth-fn spec-args]
   (let [seen (volatile! #{})]
     (into {}
           (map (fn [[k v]]
@@ -164,12 +170,12 @@
                  (vswap! seen conj k)
                  (let [{:keys [args arg-groups]} (normalize-exec v)
                        _ (check-ambiguous-groups arg-groups)
-                       impl (gen-group-branch k target-fn args (first arg-groups))]
+                       impl (gen-group-branch k target-fn meth-fn args (first arg-groups))]
                    [k impl])))
           (partition 2 spec-args))))
 
 (defmacro testfx-specs [& spec-args]
-  (gen-exec-specs* testfx-target-fn spec-args))
+  (gen-exec-specs* testfx-target-fn testfx-meth-fn spec-args))
 
 (defmacro ^:private defn-acoerce [name type coerce pred]
   (let [class-sym (symbol (.getName ^Class (resolve type)))
@@ -188,6 +194,20 @@
 (defn-acoerce ^:private coerce-mouse-buttons MouseButton coerce-mouse-button keyword?)
 (defn-acoerce ^:private coerce-key-codes KeyCode (coerce/enum KeyCode) keyword?)
 (defn-acoerce ^:private coerce-nodes Node identity (constantly false))
+
+(comment
+  (testfx-specs
+    :type-robot/type [{:key :key-codes
+                       :coerce coerce-key-codes
+                       :one-of #{0}}
+                      {:key :key-code
+                       :coerce (coerce/enum KeyCode)
+                       :one-of #{0}}
+                      {:key :times
+                       :coerce int
+                       :default 1
+                       :only-with #{:key-code}}])
+)
 
 (def exec-specs
   (testfx-specs
@@ -437,6 +457,7 @@
                        :one-of #{0}}
                       {:key :times
                        :coerce int
+                       :default 1
                        :only-with #{:key-code}}]
 
 
@@ -975,6 +996,9 @@
 (defn exec [robot spec]
   (((:testfx/op spec) exec-specs)
    (assoc spec :testfx/robot robot)))
+
+(defn create-robot []
+  (FxRobot.))
 
 (def ^:private keyword->class-sym
   '{:sphere javafx.scene.shape.Sphere,

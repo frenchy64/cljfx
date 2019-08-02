@@ -15,6 +15,12 @@
 
 (set! *warn-on-reflection* true)
 
+(defn general-spec-meth-fn [k]
+  (let [[fst & nxt] (-> k
+                        name
+                        (str/split #"-"))]
+    (symbol (apply str "." fst (map str/capitalize nxt)))))
+
 (defn general-spec-target-fn [m k]
   (let [o (with-meta (gensym 'o)
                      {:tag (-> k namespace symbol)})]
@@ -24,6 +30,7 @@
 (defmacro tst-general-specs [& spec-args]
   (@#'cljfx.testfx/gen-exec-specs*
     general-spec-target-fn
+    general-spec-meth-fn
     spec-args))
 
 (def general-specs
@@ -89,3 +96,47 @@
         (is (= "Disallowed key combination" (ex-message e)))
         (is (= {:keys #{:str :ch}} (select-keys (ex-data e) [:keys])))))
     ))
+
+(defn spec-test-fn [& args]
+  (vec args))
+
+(defn clj-spec-meth-fn [k]
+  `spec-test-fn)
+
+(defn clj-spec-target-fn [m k]
+  `(:target ~m))
+
+(defmacro tst-clj-specs [& spec-args]
+  (@#'cljfx.testfx/gen-exec-specs*
+    clj-spec-target-fn
+    clj-spec-meth-fn
+    spec-args))
+
+(def clj-specs
+  (tst-clj-specs
+    :invoke {:args {:ch {:coerce int}
+                    :str {:coerce str}
+                    :from-index {:coerce int}}
+             :arg-groups #{[{:key :ch
+                             :one-of #{0}}
+                            {:key :str
+                             :one-of #{0}}
+                            {:key :from-index
+                             :optional #{1}}]}}
+    ))
+
+(defn exec-clj-spec [o spec]
+  {:pre [(not (contains? spec :target))]}
+  (((:op spec) clj-specs)
+   (assoc spec :target o)))
+
+;TODO investigate :one-of bugs with the following setup
+(deftest clj-spec-test
+  (is (= (exec-clj-spec "my-object"
+                        {:op :invoke
+                         :ch \a})
+         ["my-object" 97]))
+  (is (= (exec-clj-spec "my-object"
+                        {:op :invoke
+                         :str "a"})
+         ["my-object" "a"])))

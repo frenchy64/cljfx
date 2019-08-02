@@ -19,7 +19,7 @@
                :scene {:fx/type :scene
                        :root {:fx/type :text-field}}})
         _ (swap! state assoc :cmp cmp)
-        robot (testfx/robot)
+        robot (testfx/create-robot)
         _ (swap! state assoc :robot robot)
         ^javafx.stage.Window window (fx/instance cmp)]
     ))
