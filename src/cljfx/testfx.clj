@@ -1238,7 +1238,8 @@
                                                                         (str/split #"-")))))
                       meth)]
     `(fn [~instance-sym]
-       (~getter-expr ~instance-sym ~@args))))
+       (let [~instance-sym (fx/instance ~instance-sym)]
+         (~getter-expr ~instance-sym ~@args)))))
 
 ;(getter :button .getText)
 ;(getter :button :text)

@@ -27,21 +27,19 @@
 (Thread/sleep 1000)
 
 (fx/on-fx-thread
-  (let [{:keys [cmp ^FxRobot robot]} @state
-        ^javafx.stage.Window window (fx/instance cmp)
-        point-query (.point robot
-                            (-> window
-                                .getScene
-                                .getRoot))]
+  (let [{:keys [cmp ^FxRobot robot]} @state]
     (testfx/exec robot
                  {:testfx/op :click-robot/click-on
-                  :point-query point-query
+                  :point-query (testfx/exec robot
+                                            {:testfx/op :fx-robot/point
+                                             :node (-> cmp
+                                                       ((testfx/getter :stage :scene))
+                                                       ((testfx/getter :scene :root)))})
                   :motion :direct
                   :buttons :primary})
     (testfx/exec robot
                  {:testfx/op :type-robot/type
                   :key-code :a})
-    #_
     (testfx/exec robot
                  {:testfx/op :type-robot/type
                   :key-codes (repeat 10 :a)
