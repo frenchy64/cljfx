@@ -149,6 +149,27 @@
                                       {:key :from-index
                                        :optional #{1}
                                        :only-with #{:str}}]}}
+    :optional+default {:args {:ch {:coerce int}
+                              :str {:coerce str}
+                              :from-index {:coerce int
+                                           :default 1}}
+                       :arg-groups #{[{:key :ch
+                                       :one-of #{0}}
+                                      {:key :str
+                                       :one-of #{0}}
+                                      {:key :from-index
+                                       :optional #{1}
+                                       :only-with #{:str}}]}}
+    :mandatory-default {:args {:ch {:coerce int}
+                               :str {:coerce str}
+                               :from-index {:coerce inc
+                                            :default 1}}
+                        :arg-groups #{[{:key :ch
+                                        :one-of #{0}}
+                                       {:key :str
+                                        :one-of #{0}}
+                                       {:key :from-index
+                                        :only-with #{:str}}]}}
     ))
 
 (defn exec-clj-spec [o spec]
@@ -222,5 +243,58 @@
                                   :ch 1
                                   :from-index 1
                                   })
-                  identity)
+                  (fn [e]
+                    (is (= "Key provided without dependency" (ex-message e)))
+                    (is (= {:key :from-index
+                            :missing-dependency #{:str}
+                            :others #{:ch}}
+                           (ex-data e)))))
+  (is (= (exec-clj-spec "my-object"
+                        {:op :optional+default
+                         :str "a"
+                         :from-index 1
+                         })
+         ["my-object" "a" 1]))
+  ;the weird case, should :from-index be automatically filled in?
+  ; it's :optional, but it has a :default.
+  (is (= (exec-clj-spec "my-object"
+                        {:op :optional+default
+                         :str "a"})
+         ["my-object" "a"]))
+  (throws-ex-info (exec-clj-spec "my-object"
+                                 {:op :optional+default
+                                  :ch "a"
+                                  :from-index 1
+                                  })
+                  (fn [e]
+                    (is (= "Key provided without dependency" (ex-message e)))
+                    (is (= {:key :from-index
+                            :missing-dependency #{:str}
+                            :others #{:ch}}
+                           (ex-data e)))))
+  (is (= (exec-clj-spec "my-object"
+                        {:op :mandatory-default
+                         :ch 1})
+         ["my-object" 1]))
+  (is (= (exec-clj-spec "my-object"
+                        {:op :mandatory-default
+                         :str "a"
+                         :from-index -1
+                         })
+         ["my-object" "a" 0]))
+  (is (= (exec-clj-spec "my-object"
+                        {:op :mandatory-default
+                         :str "a"})
+         ["my-object" "a" 2]))
+  (throws-ex-info (exec-clj-spec "my-object"
+                                 {:op :mandatory-default
+                                  :ch "a"
+                                  :from-index 1
+                                  })
+                  (fn [e]
+                    (is (= "Key provided without dependency" (ex-message e)))
+                    (is (= {:key :from-index
+                            :missing-dependency #{:str}
+                            :others #{:ch}}
+                           (ex-data e)))))
   )

@@ -41,14 +41,39 @@
        (-> ~instance-sym .robotContext ~getter-expr))))
 
 (defn- normalize-exec [v]
-  (if (vector? v)
-    {:args (into {}
-                 (map (fn [{:keys [key] :as arg}]
-                        [key (dissoc arg :key :optional :one-of :only-with)]))
-                 v)
-     :arg-groups #{(mapv #(select-keys % [:optional :key :one-of :only-with])
-                         v)}}
-    v))
+    (if (vector? v)
+      {:args (into {}
+                   (map (fn [{:keys [key] :as arg}]
+                          {:pre [(keyword? key)]}
+                          (let [valid-keys #{:key :optional :one-of :only-with :coerce :default}
+                                err (some-> (set/difference (set (keys arg)) valid-keys)
+                                            not-empty
+                                            ((juxt (constantly arg) identity)))]
+                            (assert (not err) (str "Extra keys provided: " err))
+                            [key (dissoc arg :key :optional :one-of :only-with)])))
+                   v)
+       :arg-groups #{(mapv #(select-keys % [:optional :key :one-of :only-with])
+                           v)}}
+      (let [_ (assert (= #{:args :arg-groups} (set (keys v)))
+                      (str "Extra keys in map: " v))
+            valid-args-keys #{:coerce :default}
+            _ (assert (every? keyword? (keys (:args v))))
+            args-err (some #(some-> (set/difference (set (keys %)) valid-args-keys)
+                                    not-empty
+                                    ((juxt (constantly %) identity)))
+                           (vals (:args v)))
+            _ (assert (not args-err) (str "Extra keys in :args: " args-err))
+            valid-arg-groups-keys #{:coerce :default}
+            _ (assert (set? (:arg-groups v))
+                      v)
+            _ (assert (every? vector? (:arg-groups v)))
+            arg-groups-err (some #(some-> (set/difference (set (keys %)) valid-arg-groups-keys)
+                                          not-empty
+                                          ((juxt (constantly %) identity)))
+                                 (apply concat (:arg-groups v)))
+            _ (assert (not args-err) (str "Extra keys in :args-groups: " args-err))
+            ]
+        v)))
 
 (defn- gen-group-branch*
   ([m meth target arg-impl-map prev group]
@@ -77,50 +102,49 @@
                                   (if (set? only-with)
                                     [only-with]
                                     only-with)))
-             dispose #(gen-group-branch* prev (subvec group 1))]
-         (cond
-           expected-pos
-           (let [throw-one-of (fn []
-                                `(throw (ex-info ~(str "Must provide one of keys")
-                                                 {:pos ~current-pos
-                                                  :keys ~(conj (into #{}
-                                                                     (comp (filter (comp #(contains? % current-pos)
-                                                                                         (some-fn :optional :one-of)))
-                                                                           (map :key))
-                                                                     prev)
-                                                               key)})))
-                 throw-ambiguous (fn []
-                                   `(throw (ex-info "Disallowed key combination"
-                                                    {:keys ~(conj
-                                                              (into #{}
-                                                                    (comp (filter (comp #{one-of} :one-of))
-                                                                          (map :key))
-                                                                    prev)
-                                                              key)})))]
-             (if missing-deps
+             dispose #(gen-group-branch* prev (subvec group 1))
+             pick #(gen-group-branch* (conj prev fst) (subvec group 1))
+             throw-dependency (fn []
+                                `(throw (ex-info ~(str "Key provided without dependency")
+                                                 {:key ~key
+                                                  :missing-dependency ~missing-deps
+                                                  :others ~(into #{} (map :key) prev)})))
+             throw-combination (fn []
+                                 `(throw (ex-info "Disallowed key combination"
+                                                  {:keys ~(conj
+                                                            (into #{}
+                                                                  (comp (filter (comp #{one-of} :one-of))
+                                                                        (map :key))
+                                                                  prev)
+                                                            key)})))
+             throw-one-of (fn []
+                            `(throw (ex-info ~(str "Must provide one of keys")
+                                             {:pos ~current-pos
+                                              :keys ~(conj (into #{}
+                                                                 (comp (filter (comp #(contains? % current-pos)
+                                                                                     (some-fn :optional :one-of)))
+                                                                       (map :key))
+                                                                 prev)
+                                                           key)})))]
+         (if expected-pos
+           (if missing-deps
+             `(if (contains? ~m ~key)
+                ~(throw-dependency)
+                ~(dispose))
+             (if (contains? expected-pos current-pos)
                `(if (contains? ~m ~key)
-                  (throw (ex-info ~(str "Key provided without dependency")
-                                  {:key ~key
-                                   :missing-dependency ~missing-deps
-                                   :others ~(into #{} (map :key) prev)}))
-                  ~(dispose))
-               (if (contains? expected-pos current-pos)
-                 `(if (contains? ~m ~key)
-                    ~(gen-group-branch* (conj prev fst) (subvec group 1))
-                    ~(if (and one-of (not (some-> group second :one-of (contains? current-pos))))
-                       (throw-one-of)
-                       (dispose)))
-                 `(if (contains? ~m ~key)
-                    ~(throw-ambiguous)
-                    ~(dispose)))))
-
-             :else
-             (if missing-deps
-               `(throw (ex-info ~(str "Key provided without dependency")
-                                {:key ~key
-                                 :missing-dependency ~missing-deps
-                                 :others ~(into #{} (map :key) prev)}))
-               (gen-group-branch* (conj prev fst) (subvec group 1)))))))))
+                  ~(pick)
+                  ~(if (and one-of (not (some-> group second :one-of (contains? current-pos))))
+                     (throw-one-of)
+                     (dispose)))
+               `(if (contains? ~m ~key)
+                  ~(throw-combination)
+                  ~(dispose))))
+           (if missing-deps
+             `(if (contains? ~m ~key)
+                ~(throw-dependency)
+                ~(dispose))
+             (pick))))))))
 
 (defn- gen-group-branch
   ([k target-fn meth-fn args group]
@@ -200,6 +224,44 @@
 (defn-acoerce ^:private coerce-nodes Node identity (constantly false))
 
 (comment
+  (testfx-specs
+    :fx-robot/drag [{:key :point-query
+                     :coerce ^org.testfx.service.query.PointQuery identity
+                     :optional #{0}}
+                    {:key :point
+                     :coerce coerce-point2d
+                     :optional #{0}}
+                    {:key :bounds
+                     :coerce coerce-bounds
+                     :optional #{0}}
+                    {:key :node
+                     :coerce ^Node identity
+                     :optional #{0}}
+                    {:key :scene
+                     :coerce ^Scene identity
+                     :optional #{0}}
+                    {:key :window
+                     :coerce ^javafx.stage.Window identity
+                     :optional #{0}}
+                    {:key :query
+                     :coerce str
+                     :optional #{0}}
+                    {:key :matcher
+                     :coerce ^org.hamcrest.Matcher identity
+                     :optional #{0}}
+                    {:key :predicate
+                     :coerce ^java.util.function.Predicate identity
+                     :optional #{0}}
+                    {:key :x
+                     :coerce double
+                     :optional #{0}}
+                    {:key :y
+                     :coerce double
+                     :only-with #{:x}}
+                    ; has 1-arity version with just buttons
+                    {:key :buttons
+                     :coerce coerce-mouse-buttons}]
+    )
 )
 
 (def exec-specs
@@ -360,21 +422,21 @@
                                            :coerce coerce-bounds
                                            :optional #{0}}
                                           {:key :scene}]
-    :bounds-locator/bounds-on-screen-for [{:key :node
-                                           :coerce ^Node identity
-                                           :one-of #{0}}
-                                          {:key :scene
-                                           :coerce ^Scene identity
-                                           :one-of #{0}}
-                                          {:key :window
-                                           :coerce ^javafx.stage.Window identity
-                                           :one-of #{0}}
-                                          {:key :bounds-in-scene
-                                           :coerce coerce-bounds
-                                           :one-of #{0}}
-                                          ;TODO test :only-with works
-                                          {:key :scene
-                                           :only-with #{:bounds-in-scene}}]
+    :bounds-locator/bounds-on-screen-for {:args {:node {:coerce ^Node identity}
+                                                 :scene {:coerce ^Scene identity}
+                                                 :window {:coerce ^javafx.stage.Window identity}
+                                                 :bounds-in-scene {:coerce coerce-bounds}}
+                                          ; :scene occurs twice
+                                          :arg-groups #{[{:key :node
+                                                          :one-of #{0}}
+                                                         {:key :scene
+                                                          :one-of #{0}}
+                                                         {:key :window
+                                                          :one-of #{0}}
+                                                         {:key :bounds-in-scene
+                                                          :one-of #{0}}
+                                                         {:key :scene
+                                                          :only-with #{:bounds-in-scene}}]}}
 
     :point-locator/point [{:key :bounds
                            :coerce coerce-bounds
@@ -451,7 +513,6 @@
                       {:key :times
                        :coerce int
                        :default 1
-                       :optional #{1}
                        :only-with #{:key-code}}]
 
 
@@ -736,63 +797,59 @@
                        {:key :buttons
                         :coerce coerce-mouse-buttons
                         :one-of #{0}}]
-    :fx-robot/click-on {:args {; :buttons is referenced twice
-                               :buttons {:coerce coerce-mouse-buttons}
-                               :point-query {:coerce ^org.testfx.service.query.PointQuery identity}
-                               :motion {:coerce coerce-motion}
-                               :point {:point coerce-point2d}
-                               :bounds {:coerce coerce-bounds}
-                               :node {:coerce ^Node identity}
-                               :scene {:coerce ^Scene identity}
-                               :window {:coerce ^javafx.stage.Window identity}
-                               :query {:coerce str}
-                               :matcher {:coerce ^org.hamcrest.Matcher identity}
-                               :predicate {:coerce ^java.util.function.Predicate identity}
-                               :x {:coerce double}
-                               :y {:coerce double}}
-                        :arg-groups #{[{:key :buttons
-                                        :one-of #{0}}
-                                       {:key :point-query
-                                        :one-of #{0}}
-                                       {:key :point
-                                        :one-of #{0}}
-                                       {:key :bounds
-                                        :one-of #{0}}
-                                       {:key :node
-                                        :one-of #{0}}
-                                       {:key :scene
-                                        :one-of #{0}}
-                                       {:key :window
-                                        :one-of #{0}}
-                                       {:key :query
-                                        :one-of #{0}}
-                                       {:key :matcher
-                                        :one-of #{0}}
-                                       {:key :predicate
-                                        :one-of #{0}}
-                                       {:key :x
-                                        :one-of #{0}}
-                                       {:key :y
-                                        :only-with #{:x}}
-                                       {:key :motion
-                                        ; allow 1-arg :buttons
-                                        :only-with [#{:point-query}
-                                                    #{:x :y}
-                                                    #{:point}
-                                                    #{:bounds}
-                                                    #{:node}
-                                                    #{:scene}
-                                                    #{:window}
-                                                    #{:query}
-                                                    #{:matcher}
-                                                    #{:predicate}]}
-                                       {:key :buttons
-                                        :only-with #{:motion}}]}}
+    :fx-robot/click-on [{:key :point-query
+                         :coerce ^org.testfx.service.query.PointQuery identity
+                         :optional #{0}}
+                        {:key :point
+                         :coerce coerce-point2d
+                         :optional #{0}}
+                        {:key :bounds
+                         :coerce coerce-bounds
+                         :optional #{0}}
+                        {:key :node
+                         :coerce ^Node identity
+                         :optional #{0}}
+                        {:key :scene
+                         :coerce ^Scene identity
+                         :optional #{0}}
+                        {:key :window
+                         :coerce ^javafx.stage.Window identity
+                         :optional #{0}}
+                        {:key :query
+                         :coerce str
+                         :optional #{0}}
+                        {:key :matcher
+                         :coerce ^org.hamcrest.Matcher identity
+                         :optional #{0}}
+                        {:key :predicate
+                         :coerce ^java.util.function.Predicate identity
+                         :optional #{0}}
+                        {:key :x
+                         :coerce double
+                         :optional #{0}}
+                        {:key :y
+                         :coerce double
+                         :only-with #{:x}}
+                        {:key :motion
+                         :coerce coerce-motion
+                         ; allow 1-arg :buttons
+                         :only-with [#{:point-query}
+                                     #{:x :y}
+                                     #{:point}
+                                     #{:bounds}
+                                     #{:node}
+                                     #{:scene}
+                                     #{:window}
+                                     #{:query}
+                                     #{:matcher}
+                                     #{:predicate}]}
+                        {:key :buttons
+                         :coerce coerce-mouse-buttons}]
     :fx-robot/right-click-on [{:key :point-query
                                :coerce ^org.testfx.service.query.PointQuery identity
                                :optional #{0}}
                               {:key :point
-                               :point coerce-point2d
+                               :coerce coerce-point2d
                                :optional #{0}}
                               {:key :bounds
                                :coerce coerce-bounds
@@ -838,7 +895,7 @@
                                 :coerce ^org.testfx.service.query.PointQuery identity
                                 :one-of #{0}}
                                {:key :point
-                                :point coerce-point2d
+                                :coerce coerce-point2d
                                 :one-of #{0}}
                                {:key :bounds
                                 :coerce coerce-bounds
@@ -875,7 +932,7 @@
                      :coerce ^org.testfx.service.query.PointQuery identity
                      :optional #{0}}
                     {:key :point
-                     :point coerce-point2d
+                     :coerce coerce-point2d
                      :optional #{0}}
                     {:key :bounds
                      :coerce coerce-bounds
@@ -979,8 +1036,10 @@
                         :coerce double
                         :only-with #{:x}}
                        {:key :offset-reference-pos
+                        :coerce ^javafx.geometry.Pos identity
                         :only-with #{:node}}
                        {:key :offset
+                        :coerce coerce-point2d
                         :only-with #{:node}}
                        {:key :motion
                         :default :default

@@ -40,7 +40,12 @@
                   :buttons :primary})
     (testfx/exec robot
                  {:testfx/op :type-robot/type
-                  :key-codes (repeat 10 :a)})
+                  :key-code :a})
+    #_
+    (testfx/exec robot
+                 {:testfx/op :type-robot/type
+                  :key-codes (repeat 10 :a)
+                  })
     ;(.targetWindow robot ^javafx.stage.Window (fx/instance cmp))
     #_
     (.clickOn robot point-query (testfx/coerce-motion :direct)
