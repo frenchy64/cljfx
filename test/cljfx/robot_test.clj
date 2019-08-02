@@ -237,3 +237,25 @@
       "You are hello world!")
 
     (teardown)))
+
+(deftest e06-pagination
+  (let [test-page (fn [n]
+                    (testfx/exec
+                      (click n))
+
+                    (Thread/sleep 200)
+
+                    (verify-label-text-by-label-prefix "This is a page "
+                      (str "This is a page " n)))]
+    (testfx/with-robot
+      (require 'e06-pagination :reload)
+      (attach)
+
+      (verify-label-text-by-label-prefix "This is a page "
+        "This is a page 5")
+
+      (test-page 4)
+      (test-page 1)
+      (test-page 10)
+
+      (teardown))))
