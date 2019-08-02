@@ -156,13 +156,17 @@
           "Ambiguous grouping"))
 
 (defn- gen-exec-specs* [target-fn spec-args]
-  (into {}
-        (map (fn [[k v]]
-               (let [{:keys [args arg-groups]} (normalize-exec v)
-                     _ (check-ambiguous-groups arg-groups)
-                     impl (gen-group-branch k target-fn args (first arg-groups))]
-                 [k impl])))
-        (partition 2 spec-args)))
+  (let [seen (volatile! #{})]
+    (into {}
+          (map (fn [[k v]]
+                 (assert (not (@seen k))
+                         (str "Duplicate spec entry: " k))
+                 (vswap! seen conj k)
+                 (let [{:keys [args arg-groups]} (normalize-exec v)
+                       _ (check-ambiguous-groups arg-groups)
+                       impl (gen-group-branch k target-fn args (first arg-groups))]
+                   [k impl])))
+          (partition 2 spec-args))))
 
 (defmacro testfx-specs [& spec-args]
   (gen-exec-specs* testfx-target-fn spec-args))
@@ -454,8 +458,9 @@
                                  {:key :path}]
     
     ;Note: NYI in TextFX
-    :capture-support/annotate-image [{:key :image}
-                                     {:key :path}]
+    ;:capture-support/annotate-image [{:key :image}
+    ;                                 {:key :path}]
+
     :capture-support/match-images [{:key :image0}
                                    {:key :image1}
                                    {:key :pixel-matcher}]
