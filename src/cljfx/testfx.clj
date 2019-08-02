@@ -250,6 +250,10 @@
   (if (instance? org.testfx.service.query.NodeQuery v)
     (.query v)
     v))
+(defn resolve-all-node-query [^org.testfx.service.query.NodeQuery v]
+  (if (instance? org.testfx.service.query.NodeQuery v)
+    (.queryAll v)
+    v))
 (defn resolve-bounds-query [^org.testfx.service.query.BoundsQuery v]
   (if (instance? org.testfx.service.query.BoundsQuery v)
     (.query v)
@@ -259,7 +263,7 @@
 (defn- ^javafx.stage.Window coerce-window [n] (fx/instance n))
 (defn- ^Scene coerce-scene [n] (fx/instance n))
 
-(defn- ^java.util.function.Predicate coerce-predicate [f]
+(defn ^java.util.function.Predicate coerce-predicate [f]
   (if (instance? java.util.function.Predicate f)
     f
     (if (fn? f)

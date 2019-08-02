@@ -12,16 +12,19 @@
 (set! *warn-on-reflection* true)
 
 
-(defn attach []
-  @(fx/on-fx-thread)
-  (testfx/exec
-    {:testfx/op :fx-robot/target-window
-     :window-index 0})
-  (let [target (testfx/exec
-                 {:testfx/op :fx-robot/target-window})]
-    @(fx/on-fx-thread
-       ((testfx/setter :stage :always-on-top true)
-        target))))
+(defn attach
+  ([] (attach {:window-index 0}))
+  ([m]
+   @(fx/on-fx-thread)
+   (testfx/exec
+     (merge
+       {:testfx/op :fx-robot/target-window}
+       m))
+   (let [target (testfx/exec
+                  {:testfx/op :fx-robot/target-window})]
+     @(fx/on-fx-thread
+        ((testfx/setter :stage :always-on-top true)
+         target)))))
 
 (defn teardown []
   (let [target (testfx/exec
@@ -121,6 +124,9 @@
 
 (defn lookup-node-query-from [^org.testfx.service.query.NodeQuery from ^String query]
   (.lookup from query))
+
+(defn lookup-node-query-with-predicate [^org.testfx.service.query.NodeQuery from f]
+  (.lookup from (testfx/coerce-predicate f)))
 
 (defn text-field-next-to-label [query]
   (testfx/resolve-node-query
@@ -383,3 +389,96 @@
       ;       "buy water" true})
 
       (teardown))))
+
+(deftest e10-multiple-windows
+  (let []
+    (testfx/with-robot
+      (require 'e10-multiple-windows :reload)
+      @(fx/on-fx-thread)
+      (doseq [^Window w (testfx/exec {:testfx/op :fx-robot/list-windows})]
+        (attach {:window w})
+        (is (== e10-multiple-windows/width (.getWidth w)))
+        (is (== e10-multiple-windows/height (.getHeight w)))
+
+        ;TODO
+        #_
+        (let [[x y] (if (== 0.0 (.getX w))
+                      [0 0]
+                      [e10-multiple-windows/right
+                       e10-multiple-windows/bottom])]
+          (verify-label-text-by-label-prefix "Window at "
+            (str "Window at [" x ", " y "] with size "
+                 e10-multiple-windows/width
+                 "x"
+                 e10-multiple-windows/height)))
+        (teardown)))))
+
+(defn drag-node [node]
+  {:testfx/op :fx-robot/drag
+   :node node})
+
+(defn drop-to [node x y]
+  {:testfx/op :fx-robot/drop-to
+   :x x
+   :y y})
+
+(deftest e11-mouse-dragging
+  (let []
+    (testfx/with-robot
+      (require 'e11-mouse-dragging :reload)
+      (attach)
+      (let [circles (-> (testfx/exec
+                          (lookup-predicate #(instance? javafx.scene.shape.Circle %)))
+                        testfx/resolve-all-node-query
+                        vec)]
+        (is (= 2 (count circles)))
+        (doseq [circle circles]
+          (testfx/exec
+            (drag-node circle)
+            (drop-to circle 500 500))))
+      (teardown))
+      ))
+
+;FIXME how to click on slider?
+(deftest e12-interactive-development
+  (let []
+    (testfx/with-robot
+      (require 'e12-interactive-development :reload)
+      (attach)
+      (testfx/exec
+        (click ".slider")
+        )
+      (Thread/sleep 200)
+      (teardown)
+      )))
+
+(deftest e13-re-frame-like-state
+  (let [close-button-for-label (fn [pane query]
+                                 (testfx/resolve-node-query
+                                   (lookup-node-query-with-predicate
+                                     (testfx/exec
+                                       {:testfx/op :fx-robot/from
+                                        :parent-nodes [(-> (testfx/exec (lookup-query query))
+                                                           ((testfx/getter :node :parent)))
+                                                       (-> (testfx/exec (lookup-query pane))
+                                                           ((testfx/getter :node :parent)))
+                                                       ]})
+                                     #(instance? javafx.scene.layout.StackPane %))))
+        click-close-button (fn [pane query]
+                             {:testfx/op :fx-robot/click-on
+                              :bounds (-> (testfx/exec
+                                            {:testfx/op :fx-robot/bounds
+                                             :node (close-button-for-label pane query)})
+                                          testfx/resolve-bounds-query)})]
+    (testfx/with-robot
+      (require 'e13-re-frame-like-state :reload)
+      (attach)
+      ;FIXME pane selection doesn't work, always chooses left pane
+      (testfx/exec
+        (mapv #(apply click-close-button %)
+              (shuffle
+                [["Potions" "Applebloom"]
+                 ["Ingredients" "Sulfur"]
+                 ["Ingredients" "Fireberries"]])))
+      (teardown)
+      )))
