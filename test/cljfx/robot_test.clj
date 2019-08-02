@@ -53,6 +53,10 @@
                      (name s)
                      s))})
 
+(defn enter []
+  {:testfx/op :fx-robot/type
+   :key-code javafx.scene.input.KeyCode/ENTER})
+
 (defn lookup-query [s]
   {:testfx/op :fx-robot/lookup
    :query s})
@@ -279,5 +283,103 @@
                        "VBox"
                        "Button Bar"])
                     ["Anchor Pane"])))
+
+      (teardown))))
+
+;TODO
+#_
+(deftest e08-media
+  (let [wait-until-video-plays (fn []
+                                 (dotimes [_ 20]
+                                   )
+                                 )]
+    (testfx/with-robot
+      (require 'e08-media :reload)
+      (attach)
+
+      (teardown))))
+
+(deftest e09-todo-app
+  (let [check-box-for-label (fn [query]
+                              (testfx/resolve-node-query
+                                (lookup-node-query-from
+                                  (testfx/exec
+                                    {:testfx/op :fx-robot/from
+                                     :parent-nodes (-> (testfx/exec (lookup-query query))
+                                                       ((testfx/getter :node :parent))
+                                                       vector)})
+                                  ".check-box")))
+        click-check-box (fn [query]
+                          [{:testfx/op :fx-robot/sleep
+                            :milliseconds 200}
+                           {:testfx/op :fx-robot/click-on
+                            :bounds (-> (testfx/exec
+                                          {:testfx/op :fx-robot/bounds
+                                           :node (check-box-for-label query)})
+                                        testfx/resolve-bounds-query)}
+                           {:testfx/op :fx-robot/sleep
+                            :milliseconds 200}])
+        verify-check-box (fn [query state]
+                           (is (= (boolean state)
+                                  (-> (check-box-for-label query)
+                                      ((testfx/getter :check-box .isSelected))))
+                               (str "Incorrect state for " (pr-str query))))]
+    (testfx/with-robot
+      (require 'e09-todo-app :reload)
+      (attach)
+
+      ; starts with milk checked, socks unchecked
+      (run! #(apply verify-check-box %)
+            {"Buy milk" true
+             "Buy socks" false})
+
+      ; uncheck milk
+      (testfx/exec
+        (click-check-box "Buy milk"))
+
+      (run! #(apply verify-check-box %)
+            {"Buy milk" false
+             "Buy socks" false})
+
+      ; check milk and socks
+      (testfx/exec
+         (click-check-box "Buy socks"))
+
+      (run! #(apply verify-check-box %)
+            {"Buy milk" false
+             "Buy socks" true})
+
+      (testfx/exec
+         (click-check-box "Buy milk"))
+
+      (run! #(apply verify-check-box %)
+            {"Buy milk" true
+             "Buy socks" true})
+
+      ; add water
+      (testfx/exec
+        (click ".text-field")
+        (write "buy water")
+        (enter))
+
+      ;flaky?
+      ;(run! #(apply verify-check-box %)
+      ;      {"Buy milk" true
+      ;       "Buy socks" true
+      ;       "buy water" false})
+
+      ;; check water, uncheck+check socks and milk (idempotent)
+      ;(apply testfx/exec
+      ;       (map click-check-box 
+      ;            (shuffle
+      ;              (apply concat
+      ;                     ["buy water"]
+      ;                     (repeat 2 ["Buy socks"
+      ;                                "Buy milk"])))))
+
+      ;(run! #(apply verify-check-box %)
+      ;      {"Buy milk" true
+      ;       "Buy socks" true
+      ;       "buy water" true})
 
       (teardown))))

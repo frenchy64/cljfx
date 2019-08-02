@@ -1080,7 +1080,9 @@
   "Run specs sequentially. Returns the final value."
   [& specs]
   (reduce (fn [_ spec]
-            (exec1 spec))
+            (if (vector? spec)
+              (apply exec spec)
+              (exec1 spec)))
           nil
           specs))
 
