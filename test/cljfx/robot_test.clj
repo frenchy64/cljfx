@@ -12,17 +12,16 @@
 (set! *warn-on-reflection* true)
 
 
-#_
-{:testfx/op :fx-robot/point
- :node (-> stage
-           ((testfx/getter :stage :scene))
-           ((testfx/getter :scene :root)))}
-
 (defn attach []
   @(fx/on-fx-thread)
   (testfx/exec
     {:testfx/op :fx-robot/target-window
-     :window-index 0}))
+     :window-index 0})
+  (let [target (testfx/exec
+                 {:testfx/op :fx-robot/target-window})]
+    @(fx/on-fx-thread
+       ((testfx/setter :stage :always-on-top true)
+        target))))
 
 (defn teardown []
   (let [target (testfx/exec
@@ -54,17 +53,24 @@
                      (name s)
                      s))})
 
-(defn lookup [s]
+(defn lookup-query [s]
   {:testfx/op :fx-robot/lookup
    :query s})
 
-(defn backspace []
-  {:testfx/op :fx-robot/erase-text})
+(defn lookup-predicate [p]
+  {:testfx/op :fx-robot/lookup
+   :predicate p})
 
-(defn verify-text-field [selector expected]
+(defn backspace
+  ([] (backspace 1))
+  ([n]
+   {:testfx/op :fx-robot/erase-text
+    :amount n}))
+
+(defn verify-text-field-query [query expected]
   (is (= expected
          (-> (testfx/exec
-               (lookup selector))
+               (lookup-query query))
              ((testfx/getter :text-field :text))))))
 
 (deftest text-field-type-and-verify-test
@@ -75,7 +81,7 @@
     (testfx/exec
       (click ".text-field")
       (write "hello world"))
-    (verify-text-field ".text-field"
+    (verify-text-field-query ".text-field"
       "hello world")
 
     (teardown))
@@ -88,12 +94,12 @@
       (write (repeat 2 :a))
       (backspace)
       (write :b))
-    (verify-text-field ".text-field"
+    (verify-text-field-query ".text-field"
       "ab")
 
     (testfx/exec
       (write [:a :b :c :d]))
-    (verify-text-field ".text-field"
+    (verify-text-field-query ".text-field"
       "ababcd")
 
     (teardown)))
@@ -105,6 +111,93 @@
     (testfx/exec
       (click ".text-field")
       (write "hello world"))
-    (verify-text-field ".text-field"
+    (verify-text-field-query ".text-field"
       "hello world")
+    (teardown)))
+
+(defn lookup-node-query-from [^org.testfx.service.query.NodeQuery from ^String query]
+  (.lookup from query))
+
+(defn text-field-next-to-label [query]
+  (testfx/resolve-node-query
+    (lookup-node-query-from
+      (testfx/exec
+        {:testfx/op :fx-robot/from
+         :parent-nodes (-> (testfx/exec (lookup-query query))
+                           ((testfx/getter :node :parent))
+                           vector)})
+      ".text-field")))
+
+(defn click-text-field-next-to-label [query]
+  {:testfx/op :fx-robot/click-on
+   :bounds (-> (testfx/exec
+                 {:testfx/op :fx-robot/bounds
+                  :node (text-field-next-to-label query)})
+               testfx/resolve-bounds-query)})
+
+(defn verify-text-field-next-to-label [query expected]
+  (is (= expected
+         (-> (text-field-next-to-label query)
+             ((testfx/getter :text-field :text))))))
+
+(deftest e02-fn
+  (testfx/with-robot
+    (require 'e02-fn :reload)
+    (attach)
+    (testfx/exec
+      (click-text-field-next-to-label "First Name")
+      (write "hello"))
+    (verify-text-field-next-to-label "First Name"
+      "hello")
+
+    (testfx/exec
+      (click-text-field-next-to-label "Last Name")
+      (write "world"))
+    (verify-text-field-next-to-label "Last Name"
+      "world")
+
+    (teardown)))
+
+(deftest e03-map-event-handler
+  (testfx/with-robot
+    (require 'e03-map-event-handler :reload)
+    (attach)
+    (testfx/exec
+      (click ".text-field")
+      (write "hello world"))
+    (verify-text-field-query ".text-field"
+      "hello world")
+    (teardown)))
+
+(defn verify-label-text-by-label-prefix [^String starts-with expected]
+  (is (= expected
+         (-> (testfx/exec
+               (lookup-predicate (fn [p]
+                                   (when (instance? javafx.scene.control.Label p)
+                                     (-> p
+                                         ^String ((testfx/getter :label :text))
+                                         (.startsWith starts-with))))))
+             ((testfx/getter :label :text))))))
+
+(deftest e04-state-with-context
+  (testfx/with-robot
+    (require 'e04-state-with-context :reload)
+    (attach)
+    (testfx/exec
+      (click-text-field-next-to-label "First Name")
+      (backspace 4)
+      (write "hello"))
+    (verify-text-field-next-to-label "First Name"
+      "hello")
+
+    (testfx/exec
+      (click-text-field-next-to-label "Last Name")
+      (backspace 9)
+      (write "world"))
+    (verify-text-field-next-to-label "Last Name"
+      "world")
+
+    (verify-label-text-by-label-prefix "You are "
+      "You are hello world!")
+
     (teardown)))

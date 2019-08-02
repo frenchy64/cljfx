@@ -250,6 +250,10 @@
   (if (instance? org.testfx.service.query.NodeQuery v)
     (.query v)
     v))
+(defn resolve-bounds-query [^org.testfx.service.query.BoundsQuery v]
+  (if (instance? org.testfx.service.query.BoundsQuery v)
+    (.query v)
+    v))
 
 (defn- ^Node coerce-node [n] (fx/instance n))
 (defn- ^javafx.stage.Window coerce-window [n] (fx/instance n))
@@ -1243,10 +1247,17 @@
     :titled-pane javafx.scene.control.TitledPane,
     :text javafx.scene.text.Text,
     :scroll-bar javafx.scene.control.ScrollBar,
-    :light-point javafx.scene.effect.Light$Point})
+    :light-point javafx.scene.effect.Light$Point
 
-(assert (= (set (keys keyword->class-sym))
-           (set (keys cljfx.fx/keyword->lifecycle-delay))))
+    ; manually added from here
+    :node javafx.scene.Node 
+})
+
+(let [diff (not-empty
+             (set/difference
+               (set (keys cljfx.fx/keyword->lifecycle-delay))
+               (set (keys keyword->class-sym))))]
+  (assert (not diff) diff))
 
 #_
 (clojure.pprint/pprint (zipmap (keys cljfx.fx/keyword->lifecycle-delay)
