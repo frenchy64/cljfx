@@ -503,3 +503,13 @@
                     ["Pie Chart"])))
 
       (teardown))))
+
+(deftest e15-task-tracker
+  (let []
+    (testfx/with-robot
+      (require 'e15-task-tracker :reload)
+      (attach)
+
+
+      (teardown))))
+
