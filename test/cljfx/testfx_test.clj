@@ -52,6 +52,15 @@
   (((:general/op spec) general-specs)
    (assoc spec :target o)))
 
+(defmacro throws-ex-info [out ex-info-fn]
+  `(try
+     ~out
+     (is false (str "Should throw: " '~out))
+     (catch clojure.lang.ExceptionInfo e#
+       (~ex-info-fn e#))
+     (catch Throwable e#
+       (is false (str "Wrong exception: " (class e#) '~out)))))
+
 (deftest general-spec-test
   (let [tst #(exec-general-spec "asdf"
                                 (merge {:general/op :java.lang.String/index-of}
@@ -82,17 +91,15 @@
          (tst {:str 'df
                :from-index 3}) -1
          )
-    (try
+    (throws-ex-info
       (tst {:str "a"
             :ch \a})
-      (is false)
-      (catch clojure.lang.ExceptionInfo e
+      (fn [e]
         (is (= {:keys #{:str :ch}} (select-keys (ex-data e) [:keys])))))
-    (try
+    (throws-ex-info
       (tst {:str "a"
             :ch \a})
-      (is false)
-      (catch clojure.lang.ExceptionInfo e
+      (fn [e]
         (is (= "Disallowed key combination" (ex-message e)))
         (is (= {:keys #{:str :ch}} (select-keys (ex-data e) [:keys])))))
     ))
@@ -114,15 +121,34 @@
 
 (def clj-specs
   (tst-clj-specs
-    :invoke {:args {:ch {:coerce int}
-                    :str {:coerce str}
-                    :from-index {:coerce int}}
-             :arg-groups #{[{:key :ch
-                             :one-of #{0}}
-                            {:key :str
-                             :one-of #{0}}
-                            {:key :from-index
-                             :optional #{1}}]}}
+    :one-of+optional {:args {:ch {:coerce int}
+                             :str {:coerce str}
+                             :from-index {:coerce int}}
+                      :arg-groups #{[{:key :ch
+                                      :one-of #{0}}
+                                     {:key :str
+                                      :one-of #{0}}
+                                     {:key :from-index
+                                      :optional #{1}}]}}
+    :one-of+only-with {:args {:ch {:coerce int}
+                              :str {:coerce str}
+                              :from-index {:coerce int}}
+                       :arg-groups #{[{:key :ch
+                                       :one-of #{0}}
+                                      {:key :str
+                                       :one-of #{0}}
+                                      {:key :from-index
+                                       :only-with #{:str}}]}}
+    :one-of+optional-only-with {:args {:ch {:coerce int}
+                              :str {:coerce str}
+                              :from-index {:coerce int}}
+                       :arg-groups #{[{:key :ch
+                                       :one-of #{0}}
+                                      {:key :str
+                                       :one-of #{0}}
+                                      {:key :from-index
+                                       :optional #{1}
+                                       :only-with #{:str}}]}}
     ))
 
 (defn exec-clj-spec [o spec]
@@ -130,13 +156,71 @@
   (((:op spec) clj-specs)
    (assoc spec :target o)))
 
-;TODO investigate :one-of bugs with the following setup
 (deftest clj-spec-test
   (is (= (exec-clj-spec "my-object"
-                        {:op :invoke
+                        {:op :one-of+optional
                          :ch \a})
          ["my-object" 97]))
   (is (= (exec-clj-spec "my-object"
-                        {:op :invoke
+                        {:op :one-of+optional
                          :str "a"})
-         ["my-object" "a"])))
+         ["my-object" "a"]))
+  (is (= (exec-clj-spec "my-object"
+                        {:op :one-of+optional
+                         :str "a"
+                         :from-index 1})
+         ["my-object" "a" 1]))
+  (is (= (exec-clj-spec "my-object"
+                        {:op :one-of+optional
+                         :ch 0
+                         :from-index 1})
+         ["my-object" 0 1]))
+  (doseq [m [{} {:from-index 1}]]
+    (throws-ex-info (exec-clj-spec "my-object"
+                                   (merge {:op :one-of+optional} m))
+                    (fn [e]
+                      (is (= "Must provide one of keys" (ex-message e)))
+                      (is (= {:pos 0
+                              :keys #{:str}}
+                             (ex-data e))))))
+
+  (is (= (exec-clj-spec "my-object"
+                        {:op :one-of+only-with
+                         :str "a"
+                         :from-index 1
+                         })
+         ["my-object" "a" 1]))
+  (throws-ex-info (exec-clj-spec "my-object"
+                                 {:op :one-of+only-with
+                                  :ch \a
+                                  :from-index 1
+                                  })
+                  (fn [e]
+                    (is (= "Key provided without dependency" (ex-message e)))
+                    (is (= {:key :from-index
+                            :missing-dependency #{:str}
+                            :others #{:ch}}
+                           (ex-data e)))))
+  (is (= (exec-clj-spec "my-object"
+                        {:op :one-of+optional-only-with
+                         :str "a"
+                         })
+         ["my-object" "a"]))
+  (is (= (exec-clj-spec "my-object"
+                        {:op :one-of+optional-only-with
+                         :ch 1
+                         })
+         ["my-object" 1]))
+  (is (= (exec-clj-spec "my-object"
+                        {:op :one-of+optional-only-with
+                         :str "a"
+                         :from-index 1
+                         })
+         ["my-object" "a" 1]))
+  (throws-ex-info (exec-clj-spec "my-object"
+                                 {:op :one-of+optional-only-with
+                                  :ch 1
+                                  :from-index 1
+                                  })
+                  identity)
+  )

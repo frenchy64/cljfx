@@ -79,14 +79,6 @@
                                     only-with)))
              dispose #(gen-group-branch* prev (subvec group 1))]
          (cond
-           (and missing-deps expected-pos)
-           `(if (contains? ~m ~key)
-              (throw (ex-info ~(str "Key provided without dependency")
-                              {:key ~key
-                               :missing-dependency ~missing-deps
-                               :others ~(into #{} (map :key) prev)}))
-              ~(dispose))
-
            expected-pos
            (let [throw-one-of (fn []
                                 `(throw (ex-info ~(str "Must provide one of keys")
@@ -105,18 +97,30 @@
                                                                           (map :key))
                                                                     prev)
                                                               key)})))]
-             (if (contains? expected-pos current-pos)
+             (if missing-deps
                `(if (contains? ~m ~key)
-                  ~(gen-group-branch* (conj prev fst) (subvec group 1))
-                  ~(if (and one-of (not (some-> group second :one-of (contains? current-pos))))
-                     (throw-one-of)
-                     (dispose)))
-               `(if (contains? ~m ~key)
-                  ~(throw-ambiguous)
-                  ~(dispose))))
+                  (throw (ex-info ~(str "Key provided without dependency")
+                                  {:key ~key
+                                   :missing-dependency ~missing-deps
+                                   :others ~(into #{} (map :key) prev)}))
+                  ~(dispose))
+               (if (contains? expected-pos current-pos)
+                 `(if (contains? ~m ~key)
+                    ~(gen-group-branch* (conj prev fst) (subvec group 1))
+                    ~(if (and one-of (not (some-> group second :one-of (contains? current-pos))))
+                       (throw-one-of)
+                       (dispose)))
+                 `(if (contains? ~m ~key)
+                    ~(throw-ambiguous)
+                    ~(dispose)))))
 
              :else
-             (gen-group-branch* (conj prev fst) (subvec group 1))))))))
+             (if missing-deps
+               `(throw (ex-info ~(str "Key provided without dependency")
+                                {:key ~key
+                                 :missing-dependency ~missing-deps
+                                 :others ~(into #{} (map :key) prev)}))
+               (gen-group-branch* (conj prev fst) (subvec group 1)))))))))
 
 (defn- gen-group-branch
   ([k target-fn meth-fn args group]
