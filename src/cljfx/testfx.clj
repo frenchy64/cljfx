@@ -12,6 +12,16 @@
 
 (set! *warn-on-reflection* true)
 
+(def ^:dynamic *robot* nil)
+
+(defn create-robot []
+  (FxRobot.))
+
+(defmacro with-testfx [& args]
+  `(fx/on-fx-thread
+     (binding [*robot* (create-robot)]
+       ~@args)))
+
 (def ^:private ^Motion coerce-motion (coerce/enum Motion))
 
 (def ^:private ^MouseButton coerce-mouse-button (coerce/enum javafx.scene.input.MouseButton))
@@ -41,39 +51,39 @@
        (-> ~instance-sym .robotContext ~getter-expr))))
 
 (defn- normalize-exec [v]
-    (if (vector? v)
-      {:args (into {}
-                   (map (fn [{:keys [key] :as arg}]
-                          {:pre [(keyword? key)]}
-                          (let [valid-keys #{:key :optional :one-of :only-with :coerce :default}
-                                err (some-> (set/difference (set (keys arg)) valid-keys)
-                                            not-empty
-                                            ((juxt (constantly arg) identity)))]
-                            (assert (not err) (str "Extra keys provided: " err))
-                            [key (dissoc arg :key :optional :one-of :only-with)])))
-                   v)
-       :arg-groups #{(mapv #(select-keys % [:optional :key :one-of :only-with])
-                           v)}}
-      (let [_ (assert (= #{:args :arg-groups} (set (keys v)))
-                      (str "Extra keys in map: " v))
-            valid-args-keys #{:coerce :default}
-            _ (assert (every? keyword? (keys (:args v))))
-            args-err (some #(some-> (set/difference (set (keys %)) valid-args-keys)
-                                    not-empty
-                                    ((juxt (constantly %) identity)))
-                           (vals (:args v)))
-            _ (assert (not args-err) (str "Extra keys in :args: " args-err))
-            valid-arg-groups-keys #{:coerce :default}
-            _ (assert (set? (:arg-groups v))
-                      v)
-            _ (assert (every? vector? (:arg-groups v)))
-            arg-groups-err (some #(some-> (set/difference (set (keys %)) valid-arg-groups-keys)
+  (if (vector? v)
+    {:args (into {}
+                 (map (fn [{:keys [key] :as arg}]
+                        {:pre [(keyword? key)]}
+                        (let [valid-keys #{:key :optional :one-of :only-with :coerce :default}
+                              err (some-> (set/difference (set (keys arg)) valid-keys)
                                           not-empty
-                                          ((juxt (constantly %) identity)))
-                                 (apply concat (:arg-groups v)))
-            _ (assert (not args-err) (str "Extra keys in :args-groups: " args-err))
-            ]
-        v)))
+                                          ((juxt (constantly arg) identity)))]
+                          (assert (not err) (str "Extra keys provided: " err))
+                          [key (dissoc arg :key :optional :one-of :only-with)])))
+                 v)
+     :arg-groups #{(mapv #(select-keys % [:optional :key :one-of :only-with])
+                         v)}}
+    (let [_ (assert (= #{:args :arg-groups} (set (keys v)))
+                    (str "Extra keys in map: " v))
+          valid-args-keys #{:coerce :default}
+          _ (assert (every? keyword? (keys (:args v))))
+          args-err (some #(some-> (set/difference (set (keys %)) valid-args-keys)
+                                  not-empty
+                                  ((juxt (constantly %) identity)))
+                         (vals (:args v)))
+          _ (assert (not args-err) (str "Extra keys in :args: " args-err))
+          valid-arg-groups-keys #{:coerce :default}
+          _ (assert (set? (:arg-groups v))
+                    v)
+          _ (assert (every? vector? (:arg-groups v)))
+          arg-groups-err (some #(some-> (set/difference (set (keys %)) valid-arg-groups-keys)
+                                        not-empty
+                                        ((juxt (constantly %) identity)))
+                               (apply concat (:arg-groups v)))
+          _ (assert (not args-err) (str "Extra keys in :args-groups: " args-err))
+          ]
+      v)))
 
 (defn- gen-group-branch*
   ([m meth target arg-impl-map prev group]
@@ -223,46 +233,13 @@
 (defn-acoerce ^:private coerce-key-codes KeyCode (coerce/enum KeyCode) keyword?)
 (defn-acoerce ^:private coerce-nodes Node identity (constantly false))
 
-(comment
-  (testfx-specs
-    :fx-robot/drag [{:key :point-query
-                     :coerce ^org.testfx.service.query.PointQuery identity
-                     :optional #{0}}
-                    {:key :point
-                     :coerce coerce-point2d
-                     :optional #{0}}
-                    {:key :bounds
-                     :coerce coerce-bounds
-                     :optional #{0}}
-                    {:key :node
-                     :coerce ^Node identity
-                     :optional #{0}}
-                    {:key :scene
-                     :coerce ^Scene identity
-                     :optional #{0}}
-                    {:key :window
-                     :coerce ^javafx.stage.Window identity
-                     :optional #{0}}
-                    {:key :query
-                     :coerce str
-                     :optional #{0}}
-                    {:key :matcher
-                     :coerce ^org.hamcrest.Matcher identity
-                     :optional #{0}}
-                    {:key :predicate
-                     :coerce ^java.util.function.Predicate identity
-                     :optional #{0}}
-                    {:key :x
-                     :coerce double
-                     :optional #{0}}
-                    {:key :y
-                     :coerce double
-                     :only-with #{:x}}
-                    ; has 1-arity version with just buttons
-                    {:key :buttons
-                     :coerce coerce-mouse-buttons}]
-    )
-)
+(declare exec1)
+
+(defn- ^org.testfx.service.query.PointQuery coerce-point-query [v]
+  (if (and (map? v)
+           (keyword? (:testfx/op v)))
+    (exec v)
+    v))
 
 (def exec-specs
   (testfx-specs
@@ -319,23 +296,28 @@
     :keyboard-robot/release-no-wait [{:key :keys :coerce coerce-key-codes}]
 
     :drag-robot/drag [{:key :point-query
+                       :coerce coerce-point-query
                        :optional #{0}}
                       {:key :buttons
                        :coerce coerce-mouse-buttons}]
     :drag-robot/drop []
-    :drag-robot/drop-to [{:key :point-query}]
+    :drag-robot/drop-to [{:key :point-query
+                          :coerce coerce-point-query}]
     :drag-robot/drop-by [{:key :x :coerce double}
                          {:key :y :coerce double}]
     
     :click-robot/click-on [{:key :point-query
+                            :coerce coerce-point-query
                             :optional #{0}}
                            {:key :motion
                             :coerce coerce-motion
+                            :default :default
                             :optional #{1}}
                            {:key :buttons
                             :coerce coerce-mouse-buttons}]
 
     :click-robot/double-click-on [{:key :point-query
+                                   :coerce coerce-point-query
                                    :optional #{0}}
                                   {:key :motion
                                    :coerce coerce-motion
@@ -454,7 +436,8 @@
                            :coerce ^javafx.stage.Window identity
                            :one-of #{0}}]
 
-    :move-robot/move-to [{:key :point-query}
+    :move-robot/move-to [{:key :point-query
+                          :coerce coerce-point-query}
                          {:key :motion
                           :default :default
                           :coerce coerce-motion}]
@@ -748,8 +731,10 @@
                      :one-of #{0}}
                     {:key :times
                      :coerce int
+                     :default 1
                      :only-with #{:key-code}}]
     :fx-robot/erase-text [{:key :amount
+                           :default 1
                            :coerce int}]
 
     ;deprecated
@@ -798,7 +783,7 @@
                         :coerce coerce-mouse-buttons
                         :one-of #{0}}]
     :fx-robot/click-on [{:key :point-query
-                         :coerce ^org.testfx.service.query.PointQuery identity
+                         :coerce coerce-point-query
                          :optional #{0}}
                         {:key :point
                          :coerce coerce-point2d
@@ -846,7 +831,7 @@
                         {:key :buttons
                          :coerce coerce-mouse-buttons}]
     :fx-robot/right-click-on [{:key :point-query
-                               :coerce ^org.testfx.service.query.PointQuery identity
+                               :coerce coerce-point-query
                                :optional #{0}}
                               {:key :point
                                :coerce coerce-point2d
@@ -892,7 +877,7 @@
                                            #{:matcher}
                                            #{:predicate}]}]
     :fx-robot/double-click-on [{:key :point-query
-                                :coerce ^org.testfx.service.query.PointQuery identity
+                                :coerce coerce-point-query
                                 :one-of #{0}}
                                {:key :point
                                 :coerce coerce-point2d
@@ -929,7 +914,7 @@
                                {:key :buttons
                                 :coerce coerce-mouse-buttons}]
     :fx-robot/drag [{:key :point-query
-                     :coerce ^org.testfx.service.query.PointQuery identity
+                     :coerce coerce-point-query
                      :optional #{0}}
                     {:key :point
                      :coerce coerce-point2d
@@ -966,7 +951,7 @@
                      :coerce coerce-mouse-buttons}]
     :fx-robot/drop []
     :fx-robot/drop-to [{:key :point-query
-                        :coerce ^org.testfx.service.query.PointQuery identity
+                        :coerce coerce-point-query
                         :one-of #{0}}
                        {:key :point
                         :coerce coerce-point2d
@@ -1003,7 +988,7 @@
                        {:key :y :coerce double}]
 
     :fx-robot/move-to [{:key :point-query
-                        :coerce ^org.testfx.service.query.PointQuery identity
+                        :coerce coerce-point-query
                         :one-of #{0}}
                        {:key :point
                         :coerce coerce-point2d
@@ -1046,12 +1031,18 @@
                         :coerce coerce-motion}]
 ))
 
-(defn exec [robot spec]
-  (((:testfx/op spec) exec-specs)
-   (assoc spec :testfx/robot robot)))
+(defn exec1
+  ([spec] (exec1 *robot* spec))
+  ([robot spec]
+   {:pre [robot]}
+   (((:testfx/op spec) exec-specs)
+    (assoc spec :testfx/robot robot))))
 
-(defn create-robot []
-  (FxRobot.))
+(defn exec [& specs]
+  (reduce (fn [ret spec]
+            (exec1 spec))
+          nil
+          specs))
 
 (def ^:private keyword->class-sym
   '{:sphere javafx.scene.shape.Sphere,

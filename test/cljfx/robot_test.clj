@@ -9,45 +9,26 @@
 
 (set! *warn-on-reflection* true)
 
-(def state (atom {}))
-
-(fx/on-fx-thread
-  (let [cmp (fx/create-component
-              {:fx/type :stage
-               :showing true
-               :always-on-top true
-               :scene {:fx/type :scene
-                       :root {:fx/type :text-field}}})
-        _ (swap! state assoc :cmp cmp)
-        robot (testfx/create-robot)
-        _ (swap! state assoc :robot robot)
-        ^javafx.stage.Window window (fx/instance cmp)]
-    ))
+(def stage 
+  @(fx/on-fx-thread
+     (fx/create-component
+       {:fx/type :stage
+        :showing true
+        :always-on-top true
+        :scene {:fx/type :scene
+                :root {:fx/type :text-field}}})))
 
 (Thread/sleep 1000)
 
-(fx/on-fx-thread
-  (let [{:keys [cmp ^FxRobot robot]} @state]
-    (testfx/exec robot
-                 {:testfx/op :click-robot/click-on
-                  :point-query (testfx/exec robot
-                                            {:testfx/op :fx-robot/point
-                                             :node (-> cmp
-                                                       ((testfx/getter :stage :scene))
-                                                       ((testfx/getter :scene :root)))})
-                  :motion :direct
-                  :buttons :primary})
-    (testfx/exec robot
-                 {:testfx/op :type-robot/type
-                  :key-code :a})
-    (testfx/exec robot
-                 {:testfx/op :type-robot/type
-                  :key-codes (repeat 10 :a)
-                  })
-    ;(.targetWindow robot ^javafx.stage.Window (fx/instance cmp))
-    #_
-    (.clickOn robot point-query (testfx/coerce-motion :direct)
-              ^"[Ljavafx.scene.input.MouseButton;"
-              (into-array javafx.scene.input.MouseButton [javafx.scene.input.MouseButton/PRIMARY]))
-    #_
-    (.type robot ^"[Ljavafx.scene.input.KeyCode;" (into-array javafx.scene.input.KeyCode [(KeyCode/valueOf "A")]))))
+(testfx/with-testfx
+  (testfx/exec
+    {:testfx/op :fx-robot/click-on
+     :point-query {:testfx/op :fx-robot/point
+                   :node (-> stage
+                             ((testfx/getter :stage :scene))
+                             ((testfx/getter :scene :root)))}}
+    {:testfx/op :fx-robot/type
+     :key-codes (repeat 2 :a)}
+    {:testfx/op :fx-robot/erase-text}
+    {:testfx/op :fx-robot/type
+     :key-code :b}))
