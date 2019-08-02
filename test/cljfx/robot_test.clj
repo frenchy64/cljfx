@@ -201,3 +201,39 @@
       "You are hello world!")
 
     (teardown)))
+
+(deftest e05-fn-fx-like-state
+  (testfx/with-robot
+    (require 'e05-fn-fx-like-state :reload)
+    (attach)
+    (testfx/exec
+      (click-text-field-next-to-label "First Name")
+      (backspace 4)
+      (click-text-field-next-to-label "Last Name")
+      (backspace 9))
+
+    (verify-label-text-by-label-prefix "You are "
+      "You are very mysterious!")
+    (verify-label-text-by-label-prefix "Please,"
+      "Please, introduce yourself:")
+
+
+    (testfx/exec
+      (click-text-field-next-to-label "First Name")
+      (write "hello"))
+
+    (verify-text-field-next-to-label "First Name"
+      "hello")
+    (verify-label-text-by-label-prefix "You are "
+      "You are hello !")
+
+    (testfx/exec
+      (click-text-field-next-to-label "Last Name")
+      (write "world"))
+
+    (verify-text-field-next-to-label "Last Name"
+      "world")
+    (verify-label-text-by-label-prefix "You are "
+      "You are hello world!")
+
+    (teardown)))
