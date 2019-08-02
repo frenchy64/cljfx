@@ -259,3 +259,25 @@
       (test-page 10)
 
       (teardown))))
+
+(deftest e07-extra-props
+  (let []
+    (testfx/with-robot
+      (require 'e07-extra-props :reload)
+      (attach)
+
+      (apply testfx/exec
+             (map click
+                  (concat
+                    (shuffle
+                      ["Border Pane"
+                       "Flow Pane"
+                       "Grid Pane"
+                       "HBox"
+                       "Stack Pane"
+                       "Tile Pane"
+                       "VBox"
+                       "Button Bar"])
+                    ["Anchor Pane"])))
+
+      (teardown))))
