@@ -200,17 +200,6 @@
 (defn-acoerce ^:private coerce-nodes Node identity (constantly false))
 
 (comment
-  (testfx-specs
-    :type-robot/type [{:key :key-codes
-                       :coerce coerce-key-codes
-                       :one-of #{0}}
-                      {:key :key-code
-                       :coerce (coerce/enum KeyCode)
-                       :one-of #{0}}
-                      {:key :times
-                       :coerce int
-                       :default 1
-                       :only-with #{:key-code}}])
 )
 
 (def exec-specs
@@ -462,6 +451,7 @@
                       {:key :times
                        :coerce int
                        :default 1
+                       :optional #{1}
                        :only-with #{:key-code}}]
 
 
