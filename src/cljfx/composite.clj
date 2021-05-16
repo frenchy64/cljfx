@@ -14,15 +14,14 @@
   (dissoc desc :fx/type))
 
 (defn- create-props [props-desc props-config opts]
-  (into {}
-        (map (fn [e]
-               (let [k (key e)
-                     v (val e)
-                     prop-config (get props-config k)]
-                 (when-not prop-config
-                   (throw (ex-info (str "No such prop: " (pr-str k)) {:prop k})))
-                 [k (lifecycle/create (prop/lifecycle prop-config) v opts)])))
-        props-desc))
+  (reduce-kv
+    (fn [acc k v]
+      (let [prop-config (get props-config k)]
+        (when-not prop-config
+          (throw (ex-info (str "No such prop: " (pr-str k)) {:prop k})))
+        (assoc acc k (lifecycle/create (prop/lifecycle prop-config) v opts))))
+    props-desc
+    props-desc))
 
 (defn- create-composite-component [this desc opts]
   (let [props-desc (desc->props-desc desc)
