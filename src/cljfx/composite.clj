@@ -51,6 +51,10 @@
         (update
           :props
           (fn [props]
+            ;; Notes
+            ;; - this might save some work in the sorted case, but does it
+            ;;   make the unsorted (more common) case slower?
+            ;;   - just using `sequence` + distinct might be faster there
             (let [; sort and group props
                   ; entries are either:
                   ; - k=>[old-e new-e] for updates
