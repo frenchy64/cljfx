@@ -43,11 +43,10 @@
                {`component/instance :instance})))
 
 (defn- combined-keys [m1 m2]
-  (lazy-seq
-    (keys
-      (if (< (count m2) (count m1))
-        (into (or m1 {}) m2)
-        (into (or m2 {}) m1)))))
+  (keys
+    (if (< (count m2) (count m1))
+      (into (or m1 {}) m2)
+      (into (or m2 {}) m1))))
 
 (defn- advance-composite-component [this component desc opts]
   (let [props-desc (desc->props-desc desc)
@@ -61,37 +60,37 @@
                   sorted-prop-keys (if-let [prop-order (:prop-order this)]
                                      (sort-by #(get prop-order % 0) prop-keys)
                                      prop-keys)]
-              (reduce
-                (fn [acc k]
-                  (let [old-e (find props k)
-                        new-e (find props-desc k)]
-                    (cond
-                      (and (some? old-e) (some? new-e))
-                      (let [old-component (val old-e)
-                            desc (val new-e)
-                            prop-config (get props-config k)
-                            new-component (lifecycle/advance (prop/lifecycle prop-config)
-                                                             old-component
-                                                             desc
-                                                             opts)]
-                        (prop/replace! prop-config instance old-component new-component)
-                        (assoc acc k new-component))
-
-                      (some? old-e)
-                      (let [prop-config (get props-config k)]
-                        (prop/retract! prop-config instance (val old-e))
-                        (lifecycle/delete (prop/lifecycle prop-config) (val old-e) opts)
-                        (dissoc acc k))
-
-                      :else
-                      (let [prop-config (get props-config k)
-                            component (lifecycle/create (prop/lifecycle prop-config)
-                                                        (val new-e)
-                                                        opts)]
-                        (prop/assign! prop-config instance component)
-                        (assoc acc k component)))))
-                props
-                sorted-prop-keys)))))))
+              ;; start with {} instead of props so we don't need to dissoc on delete
+              (into {}
+                    (map (fn [k]
+                           (let [old-e (find props k)
+                                 new-e (find props-desc k)]
+                             (if (some? old-e)
+                               (if (some? new-e)
+                                 ;; update
+                                 (let [old-component (val old-e)
+                                       desc (val new-e)
+                                       prop-config (get props-config k)
+                                       new-component (lifecycle/advance (prop/lifecycle prop-config)
+                                                                        old-component
+                                                                        desc
+                                                                        opts)]
+                                   (prop/replace! prop-config instance old-component new-component)
+                                   [k new-component])
+                                 ;; delete
+                                 (let [prop-config (get props-config k)]
+                                   (prop/retract! prop-config instance (val old-e))
+                                   (lifecycle/delete (prop/lifecycle prop-config) (val old-e) opts)
+                                   nil))
+                               ;; create
+                               ;; Note: new-e is non-nil here because (nil? old-e)
+                               (let [prop-config (get props-config k)
+                                     component (lifecycle/create (prop/lifecycle prop-config)
+                                                                 (val new-e)
+                                                                 opts)]
+                                 (prop/assign! prop-config instance component)
+                                 [k component])))))
+                    sorted-prop-keys)))))))
 
 (defn- delete-composite-component [this component opts]
   (let [props-config (:props this)]
