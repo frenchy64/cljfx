@@ -42,6 +42,13 @@
     (with-meta {:props props :instance instance}
                {`component/instance :instance})))
 
+(defn- combined-keys [m1 m2]
+  (lazy-seq
+    (keys
+      (if (< (count m2) (count m1))
+        (into (or m1 {}) m2)
+        (into (or m2 {}) m1)))))
+
 (defn- advance-composite-component [this component desc opts]
   (let [props-desc (desc->props-desc desc)
         props-config (:props this)
@@ -50,7 +57,7 @@
         (update
           :props
           (fn [props]
-            (let [prop-keys (sequence (distinct) (concat (keys props) (keys props-desc)))
+            (let [prop-keys (combined-keys props props-desc)
                   sorted-prop-keys (if-let [prop-order (:prop-order this)]
                                      (sort-by #(get prop-order % 0) prop-keys)
                                      prop-keys)]
