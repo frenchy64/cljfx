@@ -50,70 +50,41 @@
         (update
           :props
           (fn [props]
-            ;; Notes
-            ;; - this might save some work in the sorted case, but does it
-            ;;   make the unsorted (more common) case slower?
-            ;;   - just using `sequence` + distinct might be faster there
-            (let [; sort and group props
-                  ; entries are either:
-                  ; - k=>[old-e new-e] for updates
-                  ; - k=>[old-e] for deletions
-                  ; - k=>[nil new-e] for creations
-                  sorted-old+new-props (let [;; start with sorted map if needed
-                                             empty-sorted-props
-                                             (if-let [prop-order (:prop-order this)]
-                                               ;; TODO unit test sorted case
-                                               (sorted-map-by #(compare (get prop-order %1 0)
-                                                                        (get prop-order %2 0)))
-                                               {})
-                                             ;; add old props as {k [old-e] ...}
-                                             sorted-old-props
-                                             (into empty-sorted-props
-                                                   (map (juxt key vector))
-                                                   props)]
-                                         ;; add new props as {k [(or nil old-e) new-e] ...}
-                                         (reduce (fn [acc new-e]
-                                                   (let [k (key new-e)]
-                                                     (assoc acc k
-                                                            (if-let [old-e-vec (get acc k)]
-                                                              ;; [old-e new-e]
-                                                              (conj old-e-vec new-e)
-                                                              [nil new-e]))))
-                                                 sorted-old-props
-                                                 props-desc))]
-              (into {}
-                    (map (fn [e]
-                           (let [k (key e)
-                                 group (val e)
-                                 old-e (nth group 0)
-                                 new-e (nth group 1 nil)]
-                             (if (some? old-e)
-                               (if (some? new-e)
-                                 ;; replace
-                                 (let [old-component (val old-e)
-                                       desc (val new-e)
-                                       prop-config (get props-config k)
-                                       new-component (lifecycle/advance (prop/lifecycle prop-config)
-                                                                        old-component
-                                                                        desc
-                                                                        opts)]
-                                   (prop/replace! prop-config instance old-component new-component)
-                                   [k new-component])
-                                 ;; delete
-                                 (let [old-component (val old-e)
-                                       prop-config (get props-config k)]
-                                   (prop/retract! prop-config instance old-component)
-                                   (lifecycle/delete (prop/lifecycle prop-config) old-component opts)
-                                   nil))
-                               ;; create
-                               (let [prop-config (get props-config k)
-                                     component (lifecycle/create (prop/lifecycle prop-config)
-                                                                 ;; note: new-e exists because old-e is nil
-                                                                 (val new-e)
-                                                                 opts)]
-                                 (prop/assign! prop-config instance component)
-                                 [k component])))))
-                    sorted-old+new-props)))))))
+            (let [prop-keys (sequence (distinct) (concat (keys props) (keys props-desc)))
+                  sorted-prop-keys (if-let [prop-order (:prop-order this)]
+                                     (sort-by #(get prop-order % 0) prop-keys)
+                                     prop-keys)]
+              (reduce
+                (fn [acc k]
+                  (let [old-e (find props k)
+                        new-e (find props-desc k)]
+                    (cond
+                      (and (some? old-e) (some? new-e))
+                      (let [old-component (val old-e)
+                            desc (val new-e)
+                            prop-config (get props-config k)
+                            new-component (lifecycle/advance (prop/lifecycle prop-config)
+                                                             old-component
+                                                             desc
+                                                             opts)]
+                        (prop/replace! prop-config instance old-component new-component)
+                        (assoc acc k new-component))
+
+                      (some? old-e)
+                      (let [prop-config (get props-config k)]
+                        (prop/retract! prop-config instance (val old-e))
+                        (lifecycle/delete (prop/lifecycle prop-config) (val old-e) opts)
+                        (dissoc acc k))
+
+                      :else
+                      (let [prop-config (get props-config k)
+                            component (lifecycle/create (prop/lifecycle prop-config)
+                                                        (val new-e)
+                                                        opts)]
+                        (prop/assign! prop-config instance component)
+                        (assoc acc k component)))))
+                props
+                sorted-prop-keys)))))))
 
 (defn- delete-composite-component [this component opts]
   (let [props-config (:props this)]
