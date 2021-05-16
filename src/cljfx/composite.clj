@@ -42,6 +42,7 @@
     (with-meta {:props props :instance instance}
                {`component/instance :instance})))
 
+;; TODO microbenchmark
 (defn- combined-keys [m1 m2]
   (keys
     (if (< (count m2) (count m1))
