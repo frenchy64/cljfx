@@ -57,7 +57,9 @@
         (update
           :props
           (fn [props]
-            (let [prop-keys (combined-keys props props-desc)
+            (let [;; hmm, unclear whether to use a lazy sequence+distinct
+                  ;; or an eager op
+                  prop-keys (combined-keys props props-desc)
                   sorted-prop-keys (if-let [prop-order (:prop-order this)]
                                      (sort-by #(get prop-order % 0) prop-keys)
                                      prop-keys)]
