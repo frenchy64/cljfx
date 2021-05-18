@@ -177,33 +177,88 @@
                   (create this desc opts)))
      `delete (fn [_ _ _])}))
 
+(defn gen-plan
+  "Returns a plan--an unordered lazy sequence--to update components with descs."
+  [components descs on-create on-advance on-delete]
+  (sequence
+    (comp (mapcat keys)
+          (distinct)
+          (map (fn [k]
+                 (let [[_ desc :as has-desc?] (find descs k)]
+                   (if-some [[_ component] (find components k)]
+                     (if has-desc?
+                       (on-advance {:k k
+                                    :component component
+                                    :desc desc})
+                       (on-delete {:k k
+                                   :component component}))
+                     (on-create {:k k
+                                 :desc desc}))))))
+    [components descs]))
+
+(defn advance-prop-map-plan
+  "Returns a plan--an unordered lazy sequence--to update props with props-desc, via underlying props-config."
+  [props props-desc props-config]
+  (gen-plan props props-desc
+            (fn _on-create [m]
+              (into m
+                    {:op :assign!
+                     :prop-config (get props-config (:k m))}))
+            (fn _on-advance [m]
+              (into m
+                    {:op :replace!
+                     :prop-config (get props-config (:k m))}))
+            (fn _on-delete [m]
+              (into m
+                    {:op :retract!
+                     :prop-config (get props-config (:k m))}))))
+
+(defn create-prop-map-plan [props-desc props-config]
+  (advance-prop-map-plan {} props-desc props-config))
+
+(defn delete-prop-map-plan [props props-config]
+  (advance-prop-map-plan props {} props-config))
+
+(defn execute-prop-plan!
+  "Plan must not have duplicate keys."
+  [plan instance opts]
+  (-> (reduce (fn [[acc seen] {:keys [k] :as p}]
+                (assert (not (get seen k)))
+                [(case (:op p)
+                   :replace!
+                   (let [{:keys [component desc prop-config]} p
+                         new-component (advance (prop/lifecycle prop-config) component desc opts)]
+                     (prop/replace! prop-config instance component new-component)
+                     (assoc! acc k new-component))
+
+                   :retract!
+                   (let [{:keys [component prop-config]} p]
+                     (prop/retract! prop-config instance component)
+                     (delete (prop/lifecycle prop-config) component opts)
+                     acc)
+
+                   :assign!
+                   (let [{:keys [desc prop-config]} p
+                         component (create (prop/lifecycle prop-config) desc opts)]
+                     (prop/assign! prop-config instance component)
+                     (assoc! acc k component)))
+                 (conj! seen k)])
+              [(transient {}) (transient #{})]
+              plan)
+      first
+      persistent!))
+
+(defn create-prop-map [props-desc props-config instance opts]
+  (-> (create-prop-map-plan props-desc props-config)
+      (execute-prop-plan! instance opts)))
+
 (defn advance-prop-map [props props-desc props-config instance opts]
-  (reduce
-    (fn [acc k]
-      (let [old-e (find props k)
-            new-e (find props-desc k)]
-        (cond
-          (and (some? old-e) (some? new-e))
-          (let [component (val old-e)
-                desc (val new-e)
-                prop-config (get props-config k)
-                new-component (advance (prop/lifecycle prop-config) component desc opts)]
-            (prop/replace! prop-config instance component new-component)
-            (assoc acc k new-component))
+  (-> (advance-prop-map-plan props props-desc props-config)
+      (execute-prop-plan! instance opts)))
 
-          (some? old-e)
-          (let [prop-config (get props-config k)]
-            (prop/retract! prop-config instance (val old-e))
-            (delete (prop/lifecycle prop-config) (val old-e) opts)
-            (dissoc acc k))
-
-          :else
-          (let [prop-config (get props-config k)
-                component (create (prop/lifecycle prop-config) (val new-e) opts)]
-            (prop/assign! prop-config instance component)
-            (assoc acc k component)))))
-    props
-    (set/union (set (keys props)) (set (keys props-desc)))))
+(defn delete-prop-map [props props-config instance opts]
+  (-> (delete-prop-map-plan props props-config)
+      (execute-prop-plan! instance opts)))
 
 (defn detached-prop-map [props-config]
   (with-meta
@@ -347,16 +402,8 @@
          (let [child-desc (apply dissoc desc prop-key-set)
                child (create lifecycle child-desc opts)
                instance (component/instance child)
-               prop-desc (select-keys desc prop-key-set)
-               props (reduce
-                       (fn [acc k]
-                         (assoc acc k (create (prop/lifecycle (get props-config k))
-                                              (get prop-desc k)
-                                              opts)))
-                       prop-desc
-                       (keys prop-desc))]
-           (doseq [[k v] props]
-             (prop/assign! (get props-config k) instance v))
+               props-desc (select-keys desc prop-key-set)
+               props (create-prop-map props-desc props-config instance opts)]
            (with-meta {:child child
                        :props props}
                       {`component/instance #(-> % :child component/instance)})))
@@ -364,29 +411,29 @@
        `advance
        (fn [_ component desc opts]
          (let [child (:child component)
-               instance (component/instance child)
+               old-instance (component/instance child)
                child-desc (apply dissoc desc prop-key-set)
                new-child (advance lifecycle child child-desc opts)
                new-instance (component/instance new-child)
                with-child (assoc component :child new-child)
                props-desc (select-keys desc prop-key-set)]
-           (if (identical? instance new-instance)
-             (update with-child :props advance-prop-map props-desc props-config instance opts)
-             (do
-               ;; TODO this is wrong, should re-create props
-               (doseq [[k v] props-desc]
-                 (prop/assign! (get props-config k) new-instance v))
-               (assoc with-child :props props-desc)))))
+           (if (identical? old-instance new-instance)
+             (update with-child :props advance-prop-map props-desc props-config new-instance opts)
+             (update with-child :props
+                     (fn [props]
+                       (delete-prop-map props props-config old-instance opts)
+                       (create-prop-map-plan props-desc props-config new-instance opts))))))
 
        `delete
-       (fn [_ component opts]
-         (doseq [[k v] (:props component)]
-           (delete (prop/lifecycle (get props-config k)) v opts))
-         (delete lifecycle (:child component) opts))})))
+       (fn [_ {:keys [child props] :as component} opts]
+         (let [instance (component/instance component)]
+           (delete-prop-map props props-config instance opts))
+         (delete lifecycle child opts))})))
 
 (defn- props-on [props-config instance]
   (reify Lifecycle
     (create [_ desc opts]
+      ;; TODO create-prop-map ?
       (reduce-kv
         (fn [acc k v]
           (let [prop (get props-config k)
@@ -398,6 +445,7 @@
     (advance [_ component desc opts]
       (advance-prop-map component desc props-config instance opts))
     (delete [_ component opts]
+      ;; TODO delete-prop-map ?
       (doseq [[k v] component]
         (delete (prop/lifecycle (get props-config k)) v opts)))))
 

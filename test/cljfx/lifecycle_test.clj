@@ -1,6 +1,10 @@
 (ns cljfx.lifecycle-test
   (:require [clojure.test :refer :all]
             [testit.core :refer :all]
+            [cljfx.prop :as prop]
+            [cljfx.mutator :as mutator]
+            [cljfx.lifecycle :as lifecycle]
+            [cljfx.component :as component]
             [cljfx.api :as fx])
   (:import [javafx.scene.control Label]))
 
@@ -31,3 +35,349 @@
         ^Label i-3 (fx/instance c-3)
         _ (fact (.getText i-3) => ":a 1, :b 2")
         _ (fact (= i-1 i-2 i-3) => true)]))
+
+(def box-prop-config (prop/make (mutator/setter (fn [_ v] v)) lifecycle/dynamic))
+
+(deftest advance-prop-map-plan-test
+  (let [props-config {:a box-prop-config
+                      :b box-prop-config
+                      :c box-prop-config}
+        _ (fact (lifecycle/advance-prop-map-plan
+                  {}
+                  {:a 1}
+                  props-config)
+                => [{:op :assign!
+                     :k :a
+                     :desc 1
+                     :prop-config (:a props-config)}])
+        _ (fact (lifecycle/advance-prop-map-plan
+                  {:a 1}
+                  {}
+                  props-config)
+                => [{:op :retract!
+                     :k :a
+                     :component 1
+                     :prop-config (:a props-config)}])
+        _ (fact (lifecycle/advance-prop-map-plan
+                  {:a 1}
+                  {:a 2}
+                  props-config)
+                => [{:op :replace!
+                     :k :a
+                     :component 1
+                     :desc 2
+                     :prop-config (:a props-config)}])]))
+
+(deftest create-prop-map-plan-test
+  (let [props-config {:a box-prop-config
+                      :b box-prop-config
+                      :c box-prop-config}
+        _ (fact (lifecycle/create-prop-map-plan
+                  {}
+                  props-config)
+                => [])
+        _ (fact (lifecycle/create-prop-map-plan
+                  {:a 1}
+                  props-config)
+                => [{:op :assign!
+                     :k :a
+                     :desc 1
+                     :prop-config (:a props-config)}])]))
+
+(deftest delete-prop-map-plan-test
+  (let [props-config {:a box-prop-config
+                      :b box-prop-config
+                      :c box-prop-config}
+        _ (fact (lifecycle/delete-prop-map-plan
+                  {}
+                  props-config)
+                => [])
+        _ (fact (lifecycle/delete-prop-map-plan
+                  {:a 1}
+                  props-config)
+                => [{:op :retract!
+                     :k :a
+                     :component 1
+                     :prop-config (:a props-config)}])]))
+
+(defn mk-props [pks]
+  (let [state (atom {:history []
+                     :props {}})
+        grab-history (fn []
+                       (let [[{:keys [history]}]
+                             (swap-vals! state assoc :history [])]
+                         history))
+        mk-prop (fn [pkw]
+                  (prop/make (mutator/setter (fn [_ v]
+                                               (swap! state
+                                                      #(-> %
+                                                           (assoc-in [:props pkw] v)
+                                                           (update :history conj
+                                                                   {:op :set-prop
+                                                                    :prop pkw
+                                                                    :v v})))))
+                             lifecycle/scalar))
+        props-config (into {}
+                           (map (juxt identity mk-prop))
+                           pks)]
+    {:state state
+     :grab-history grab-history
+     :props-config props-config}))
+
+(deftest execute-prop-plan!-test
+  (let [{:keys [state props-config grab-history]} (mk-props [:a :b :c])
+        _ (swap! state assoc :props {:a 1 :c 1})
+
+        _ (fact (lifecycle/execute-prop-plan!
+                  [{:op :retract!
+                    :k :a
+                    :component 1
+                    :prop-config (:a props-config)}
+                   {:op :assign!
+                    :k :b
+                    :desc 42
+                    :prop-config (:b props-config)}
+                   {:op :replace!
+                    :k :c
+                    :component 1
+                    :desc 24
+                    :prop-config (:c props-config)}]
+                  nil
+                  props-config)
+                => {:b 42
+                    :c 24})
+        _ (fact (grab-history)
+                => [{:op :set-prop, :prop :a, :v nil}
+                    {:op :set-prop, :prop :b, :v 42}
+                    {:op :set-prop, :prop :c, :v 24}])
+
+        ;; don't allow duplicate keys in plan
+        _ (fact (lifecycle/execute-prop-plan!
+                  [{:op :retract!
+                    :k :a
+                    :component 24
+                    :prop-config (:a props-config)}
+                   {:op :retract!
+                    :k :a
+                    :component 24
+                    :prop-config (:a props-config)}]
+                  nil
+                  props-config)
+                =throws=> AssertionError)
+        ]))
+
+(deftest wrap-extra-props-test
+  (let [extra-props #{:a :b :c}
+        existing-props #{:d :e}
+        {:keys [state grab-history props-config]} (mk-props (concat extra-props existing-props))
+        _ (swap! state assoc :obj 0)
+        sort-history (fn [h]
+                       (let [[extra existing] (split-with (comp extra-props :prop) h)]
+                         (mapcat (partial sort-by :prop) [extra existing])))
+        grab-sorted-history (comp sort-history grab-history)
+        obj (atom 0)
+        lifecycle (-> (with-meta
+                        [::existing-props]
+                        {`lifecycle/create
+                         (fn [_ desc _]
+                           (swap! state #(-> %
+                                             (update :history into
+                                                     (map (fn [[prop v]]
+                                                            {:op :set-prop
+                                                             :prop prop
+                                                             :v v})
+                                                          desc))))
+                           (swap! obj inc))
+                         `lifecycle/advance
+                         (fn [_ _ desc opts]
+                           (swap! state #(-> %
+                                             (update :history into
+                                                     (map (fn [[prop v]]
+                                                            {:op :set-prop
+                                                             :prop prop
+                                                             :v v})
+                                                          desc))))
+                           @obj)
+                         `lifecycle/delete
+                         (fn [_ _ opts]
+                           (swap! state #(-> %
+                                             (update :history into
+                                                     (map (fn [prop]
+                                                            {:op :set-prop
+                                                             :prop prop
+                                                             :v nil})
+                                                          existing-props))))
+                           nil)})
+                      (lifecycle/wrap-extra-props
+                        (select-keys props-config extra-props)))
+
+        component (lifecycle/create
+                    lifecycle
+                    {:a 1
+                     :b 2
+                     :c 3
+                     :d 4
+                     :e 5}
+                    nil)
+        _ (fact (grab-sorted-history)
+                => [{:op :set-prop, :prop :a, :v 1}
+                    {:op :set-prop, :prop :b, :v 2}
+                    {:op :set-prop, :prop :c, :v 3}
+                    {:op :set-prop, :prop :d, :v 4}
+                    {:op :set-prop, :prop :e, :v 5}])
+        _ (fact (component/instance component)
+                => 1)
+
+        ;; update just extra prop
+        component (lifecycle/advance
+                    lifecycle
+                    component
+                    {:a 1
+                     :b 3
+                     :c 3
+                     :d 4
+                     :e 5}
+                    nil)
+        _ (fact (grab-sorted-history)
+                => [{:op :set-prop, :prop :b, :v 3}
+                    {:op :set-prop, :prop :d, :v 4}
+                    {:op :set-prop, :prop :e, :v 5}])
+        _ (fact (component/instance component)
+                => 1)
+
+        ;; update just an existing prop
+        component (lifecycle/advance
+                    lifecycle
+                    component
+                    {:a 1
+                     :b 3
+                     :c 3
+                     :d 2
+                     :e 5}
+                    nil)
+        _ (fact (grab-sorted-history)
+                => [{:op :set-prop, :prop :d, :v 2}
+                    {:op :set-prop, :prop :e, :v 5}])
+        _ (fact (component/instance component)
+                => 1)
+
+        ;; same desc but different instance -- reset all props
+        _ (swap! obj inc)
+        _ (fact (component/instance component)
+                => 1)
+        component (lifecycle/advance
+                    lifecycle
+                    component
+                    {:a 1
+                     :b 3
+                     :c 3
+                     :d 2
+                     :e 5}
+                    nil)
+        _ (let [h (grab-history)
+                [existing-assigns h] (split-at 2 h)
+                [extra-retracts extra-assigns] (split-at 3 h)]
+            ;; TODO check that this is done on the new instance
+            (fact (sort-by :prop existing-assigns)
+                  => [{:op :set-prop, :prop :d, :v 2}
+                      {:op :set-prop, :prop :e, :v 5}])
+            ;; TODO check that this is done on the old instance
+            (fact (sort-by :prop extra-retracts)
+                => [{:op :set-prop, :prop :a, :v nil}
+                    {:op :set-prop, :prop :b, :v nil}
+                    {:op :set-prop, :prop :c, :v nil}])
+            ;; TODO check that this is done on the new instance
+            (fact (sort-by :prop extra-assigns)
+                => [{:op :set-prop, :prop :a, :v 1}
+                    {:op :set-prop, :prop :b, :v 3}
+                    {:op :set-prop, :prop :c, :v 3}]))
+        _ (fact (component/instance component)
+                => 2)
+
+        component (lifecycle/delete
+                    lifecycle
+                    component
+                    nil)
+        _ (fact (grab-sorted-history)
+                => [{:op :set-prop, :prop :a, :v nil}
+                    {:op :set-prop, :prop :b, :v nil}
+                    {:op :set-prop, :prop :c, :v nil}
+                    {:op :set-prop, :prop :d, :v nil}
+                    {:op :set-prop, :prop :e, :v nil}])
+        _ (fact (component/instance component)
+                => nil)
+        ]
+    ))
+
+(deftest make-ext-with-props-test
+  (let [{:keys [grab-history props-config]} (mk-props [:a :b :c])
+        grab-sorted-history #(->> (grab-history)
+                                  (sort-by :prop))
+        lifecycle (lifecycle/make-ext-with-props
+                    lifecycle/scalar
+                    props-config)
+        component (lifecycle/create
+                    lifecycle
+                    {:fx/type lifecycle
+                     :desc 1
+                     :props {:a 1
+                             :b 2
+                             :c 3}}
+                    nil)
+        _ (fact (grab-sorted-history)
+                => [{:op :set-prop, :prop :a, :v 1}
+                    {:op :set-prop, :prop :b, :v 2}
+                    {:op :set-prop, :prop :c, :v 3}])
+        _ (fact (component/instance component)
+                => 1)
+
+        component (lifecycle/advance
+                    lifecycle
+                    component
+                    {:fx/type lifecycle
+                     :desc 1
+                     :props {:a 2}}
+                    nil)
+        _ (fact (grab-sorted-history)
+                => [{:op :set-prop, :prop :a, :v 2}
+                    {:op :set-prop, :prop :b, :v nil}
+                    {:op :set-prop, :prop :c, :v nil}])
+        _ (fact (component/instance component)
+                => 1)
+
+        ;; same desc
+        component (lifecycle/advance
+                    lifecycle
+                    component
+                    {:fx/type lifecycle
+                     :desc 1
+                     :props {:a 2}}
+                    nil)
+        _ (fact (grab-sorted-history)
+                => [])
+        _ (fact (component/instance component)
+                => 1)
+
+        ;; update :desc, props reset
+        component (lifecycle/advance
+                    lifecycle
+                    component
+                    {:fx/type lifecycle
+                     :desc 2
+                     :props {:a 2}}
+                    nil)
+        _ (fact (grab-sorted-history)
+                => [{:op :set-prop, :prop :a, :v 2}])
+        _ (fact (component/instance component)
+                => 2)
+
+        component (lifecycle/delete
+                    lifecycle
+                    component
+                    nil)
+        _ (fact (grab-sorted-history)
+                ;; FIXME why doesn't this `retract!`?
+                => [])
+        _ (fact (component/instance component)
+                => nil)
+        ]))
