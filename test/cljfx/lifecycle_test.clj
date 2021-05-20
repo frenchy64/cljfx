@@ -1,6 +1,7 @@
 (ns cljfx.lifecycle-test
   (:require [clojure.test :refer :all]
             [testit.core :refer :all]
+            [cljfx.context :as context]
             [cljfx.prop :as prop]
             [cljfx.mutator :as mutator]
             [cljfx.lifecycle :as lifecycle]
@@ -380,4 +381,79 @@
                 => [])
         _ (fact (component/instance component)
                 => nil)
+        ]))
+
+(deftest wrap-context-desc-test
+  (let [state (atom {:history []})
+        grab-history (fn []
+                       (let [[{:keys [history]}]
+                             (swap-vals! state assoc :history [])]
+                         history))
+        inner-lifecycle
+        (reify
+          lifecycle/Lifecycle
+          (lifecycle/create [_ desc opts]
+            (swap! state #(-> %
+                              (update :history conj
+                                      {:op :create
+                                       :desc desc
+                                       :opts opts})))
+            :create)
+          (lifecycle/advance [_ component desc opts]
+            (swap! state #(-> %
+                              (update :history conj
+                                      {:op :advance
+                                       :component component
+                                       :desc desc
+                                       :opts opts})))
+            :advance)
+          (lifecycle/delete [_ component opts]
+            (swap! state #(-> %
+                              (update :history conj
+                                      {:op :delete
+                                       :component component
+                                       :opts opts})))
+            :delete))
+        
+        lifecycle (lifecycle/wrap-context-desc
+                    inner-lifecycle)
+
+        context (context/create {:a 1 :b 2} identity)
+        component (lifecycle/create
+                    lifecycle
+                    context
+                    {::foo 1})
+        _ (fact (grab-history)
+                => [{:op :create
+                     :desc context
+                     :opts {::foo 1
+                            :fx/context context}}])
+        _ (fact (component/instance component)
+                => :create)
+
+        context (context/swap context update :a inc)
+        component (lifecycle/advance
+                    lifecycle
+                    component
+                    context
+                    {::foo 2})
+        _ (fact (grab-history)
+                => [{:op :advance
+                     :component :create
+                     :desc context
+                     :opts {::foo 2
+                            :fx/context context}}])
+        _ (fact (component/instance component)
+                => :advance)
+
+        component (lifecycle/delete
+                    lifecycle
+                    component
+                    {::foo 3})
+        _ (fact (grab-history)
+                => [{:op :delete
+                     :component :advance
+                     :opts {::foo 3}}])
+        _ (fact (component/instance component)
+                => :delete)
         ]))
