@@ -422,7 +422,7 @@
              (update with-child :props
                      (fn [props]
                        (delete-prop-map props props-config old-instance opts)
-                       (create-prop-map-plan props-desc props-config new-instance opts))))))
+                       (create-prop-map props-desc props-config new-instance opts))))))
 
        `delete
        (fn [_ {:keys [child props] :as component} opts]
