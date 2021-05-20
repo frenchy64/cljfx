@@ -1,6 +1,7 @@
 (ns cljfx.lifecycle-test
   (:require [clojure.test :refer :all]
             [testit.core :refer :all]
+            [clojure.data]
             [cljfx.context :as context]
             [cljfx.prop :as prop]
             [cljfx.mutator :as mutator]
@@ -101,13 +102,17 @@
                      :component 1
                      :prop-config (:a props-config)}])]))
 
-(defn mk-props [pks]
-  (let [state (atom {:history []
-                     :props {}})
+(defn mk-state [init]
+  (let [state (atom (assoc init :history []))
         grab-history (fn []
                        (let [[{:keys [history]}]
                              (swap-vals! state assoc :history [])]
-                         history))
+                         history))]
+    {:state state
+     :grab-history grab-history}))
+
+(defn mk-props [pks]
+  (let [{:keys [state] :as state-m} (mk-state {:props {}})
         mk-prop (fn [pkw]
                   (prop/make (mutator/setter (fn [_ v]
                                                (swap! state
@@ -121,9 +126,7 @@
         props-config (into {}
                            (map (juxt identity mk-prop))
                            pks)]
-    {:state state
-     :grab-history grab-history
-     :props-config props-config}))
+    (assoc state-m :props-config props-config)))
 
 (deftest execute-prop-plan!-test
   (let [{:keys [state props-config grab-history]} (mk-props [:a :b :c])
@@ -383,13 +386,9 @@
                 => nil)
         ]))
 
-(deftest wrap-context-desc-test
-  (let [state (atom {:history []})
-        grab-history (fn []
-                       (let [[{:keys [history]}]
-                             (swap-vals! state assoc :history [])]
-                         history))
-        inner-lifecycle
+(defn mk-logging-lifecycle []
+  (let [{:keys [state] :as state-m} (mk-state {})
+        logging-lifecycle
         (reify
           lifecycle/Lifecycle
           (lifecycle/create [_ desc opts]
@@ -413,10 +412,12 @@
                                       {:op :delete
                                        :component component
                                        :opts opts})))
-            :delete))
-        
-        lifecycle (lifecycle/wrap-context-desc
-                    inner-lifecycle)
+            :delete))]
+    (assoc state-m :logging-lifecycle logging-lifecycle)))
+
+(deftest wrap-context-desc-test
+  (let [{:keys [grab-history logging-lifecycle]} (mk-logging-lifecycle)
+        lifecycle (lifecycle/wrap-context-desc logging-lifecycle)
 
         context (context/create {:a 1 :b 2} identity)
         component (lifecycle/create
@@ -456,4 +457,75 @@
                      :opts {::foo 3}}])
         _ (fact (component/instance component)
                 => :delete)
+        ]))
+
+(deftest context-fn->dynamic-test
+  (let [{:keys [state grab-history logging-lifecycle]} (mk-logging-lifecycle)
+        lifecycle lifecycle/context-fn->dynamic
+
+        type->lifecycle (constantly nil)
+        context0 (context/create {:a 1 :b 2} identity)
+
+        component (lifecycle/create
+                    lifecycle
+                    {:fx/type (fn [desc]
+                                (swap! state update :history conj
+                                       {:op :sub-context-fn
+                                        :desc desc})
+                                {:fx/type logging-lifecycle
+                                 :d 4})
+                     :c 3}
+                    {:fx/context context0
+                     :fx.opt/type->lifecycle type->lifecycle})
+
+        _ (let [h (grab-history)
+                context1 (get-in h [0 :desc :fx/context])]
+            (fact h
+                  => [{:op :sub-context-fn
+                       :desc {:c 3
+                              :fx/context context1}}
+                      {:op :create
+                       :desc {:fx/type logging-lifecycle
+                              :d 4}
+                       :opts {:fx/context context0
+                              :fx.opt/type->lifecycle type->lifecycle}}]))
+
+        context2 (context/create {:a 1 :b 2} identity)
+        component (lifecycle/advance
+                    lifecycle
+                    component
+                    {:fx/type (fn [desc]
+                                (swap! state update :history conj
+                                       {:op :sub-context-fn
+                                        :desc desc})
+                                {:fx/type logging-lifecycle
+                                 :d 4})
+                     :c 3}
+                    {:fx/context context2
+                     :fx.opt/type->lifecycle type->lifecycle})
+
+        _ (let [h (grab-history)
+                context3 (get-in h [0 :desc :fx/context])]
+            (fact h
+                  => [{:op :sub-context-fn
+                       :desc {:c 3
+                              :fx/context context3}}
+                      {:op :advance
+                       :component :create
+                       :desc {:fx/type logging-lifecycle
+                              :d 4}
+                       :opts {:fx/context context2
+                              :fx.opt/type->lifecycle type->lifecycle}}]))
+
+        context4 (context/create {:a 1 :b 2} identity)
+        component (lifecycle/delete
+                    lifecycle
+                    component
+                    {:fx/context context4
+                     :fx.opt/type->lifecycle type->lifecycle})
+        _ (fact (grab-history)
+                => [{:op :delete
+                     :component :advance
+                     :opts {:fx/context context4
+                            :fx.opt/type->lifecycle type->lifecycle}}])
         ]))
