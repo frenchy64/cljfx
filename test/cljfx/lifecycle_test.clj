@@ -652,3 +652,57 @@
                     {:op :delete :component :advance :opts {::foo 2}}
                     {:op :on-deleted :instance :advance}])
         ]))
+
+(deftest instance-factory-test
+  (let [{:keys [state grab-history]} (mk-state {})
+        lifecycle lifecycle/instance-factory
+
+        mk-create (fn [result]
+                    (fn []
+                      (swap! state update :history conj
+                             {:op :create})
+                      result))
+
+        create0 (mk-create :create0)
+        component (lifecycle/create
+                    lifecycle
+                    {:create create0}
+                    nil)
+        _ (fact (grab-history)
+                => [{:op :create}])
+        _ (fact (component/instance component)
+                => :create0)
+
+        ;; same create, no call
+        component (lifecycle/advance
+                    lifecycle
+                    component
+                    {:create create0}
+                    nil)
+        _ (fact (grab-history)
+                => [])
+        _ (fact (component/instance component)
+                => :create0)
+
+        ;; new create, no call
+        create1 (mk-create :create1)
+        component (lifecycle/advance
+                    lifecycle
+                    component
+                    {:create create1}
+                    nil)
+        _ (fact (grab-history)
+                => [{:op :create}])
+        _ (fact (component/instance component)
+                => :create1)
+
+        component (lifecycle/delete
+                    lifecycle
+                    component
+                    nil)
+        _ (fact (grab-history)
+                => [])
+        _ (fact (component/instance component)
+                => nil)
+        ]
+    ))
