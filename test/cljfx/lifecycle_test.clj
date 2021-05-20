@@ -399,13 +399,15 @@
                                        :opts opts})))
             :create)
           (lifecycle/advance [_ component desc opts]
-            (swap! state #(-> %
-                              (update :history conj
-                                      {:op :advance
-                                       :component component
-                                       :desc desc
-                                       :opts opts})))
-            :advance)
+            (let [[{:keys [next-advance-instance]}]
+                  (swap-vals! state #(-> %
+                                         (dissoc :next-advance-instance)
+                                         (update :history conj
+                                                 {:op :advance
+                                                  :component component
+                                                  :desc desc
+                                                  :opts opts})))]
+              (or next-advance-instance :advance)))
           (lifecycle/delete [_ component opts]
             (swap! state #(-> %
                               (update :history conj
@@ -528,4 +530,125 @@
                      :component :advance
                      :opts {:fx/context context4
                             :fx.opt/type->lifecycle type->lifecycle}}])
+        ]))
+
+(deftest wrap-on-instance-lifecycle-test
+  (let [{:keys [state grab-history logging-lifecycle]} (mk-logging-lifecycle)
+        lifecycle (lifecycle/wrap-on-instance-lifecycle logging-lifecycle)
+
+        on-created (fn [instance]
+                     (swap! state update :history conj
+                            {:op :on-created
+                             :instance instance}))
+        on-advanced (fn [old-instance new-instance]
+                      (swap! state update :history conj
+                             {:op :on-advanced
+                              :old-instance old-instance
+                              :new-instance new-instance}))
+        on-deleted (fn [instance]
+                     (swap! state update :history conj
+                            {:op :on-deleted
+                             :instance instance}))
+        component (lifecycle/create
+                    lifecycle
+                    {:on-created on-created
+                     :desc {:a 1}}
+                    {::foo 2})
+        _ (fact (grab-history)
+                => [{:op :create
+                     :desc {:a 1}
+                     :opts {::foo 2}}
+                    {:op :on-created
+                     :instance :create}])
+
+        component (lifecycle/advance
+                    lifecycle
+                    component
+                    {:on-advanced on-advanced
+                     :desc {:a 2}}
+                    {::foo 2})
+        _ (fact (grab-history)
+                => [{:op :advance
+                     :component :create
+                     :desc {:a 2}
+                     :opts {::foo 2}}
+                    {:op :on-advanced
+                     :old-instance :create
+                     :new-instance :advance}])
+
+        ;; same child instance, no on-advanced call
+        component (lifecycle/advance
+                    lifecycle
+                    component
+                    {:on-advanced on-advanced
+                     :desc {:a 2}}
+                    {::foo 2})
+        _ (fact (grab-history)
+                => [{:op :advance
+                     :component :advance
+                     :desc {:a 2}
+                     :opts {::foo 2}}])
+
+        ;; different child instance, trigger on-advanced
+        _ (swap! state assoc :next-advance-instance :advance1)
+        component (lifecycle/advance
+                    lifecycle
+                    component
+                    {:on-advanced on-advanced
+                     :desc {:a 2}}
+                    {::foo 2})
+        _ (fact (grab-history)
+                => [{:op :advance
+                     :component :advance
+                     :desc {:a 2}
+                     :opts {::foo 2}}
+                    {:op :on-advanced
+                     :old-instance :advance
+                     :new-instance :advance1}])
+
+        ;; delete w/o :on-deleted
+        component (lifecycle/delete
+                    lifecycle
+                    component
+                    {::foo 2})
+        _ (fact (grab-history)
+                => [{:op :delete
+                     :component :advance1
+                     :opts {::foo 2}}])
+
+        ;; delete with :on-deleted from create
+        component (as-> (lifecycle/create
+                          lifecycle
+                          {:on-deleted on-deleted}
+                          {::foo 2})
+                    component
+                    (lifecycle/delete
+                      lifecycle
+                      component
+                      {::foo 2}))
+        _ (fact (grab-history)
+                => [{:op :create :desc nil :opts {::foo 2}}
+                    {:op :delete :component :create :opts {::foo 2}}
+                    {:op :on-deleted :instance :create}])
+
+        ;; delete with :on-deleted from advance
+        component (as-> (lifecycle/create
+                          lifecycle
+                          {}
+                          {::foo 2})
+                    component
+                    (lifecycle/advance
+                      lifecycle
+                      component
+                      {:on-deleted on-deleted}
+                      {::foo 2})
+                    (lifecycle/delete
+                      lifecycle
+                      component
+                      {::foo 2}))
+        _ (fact (grab-history)
+                => [{:op :create :desc nil :opts {::foo 2}}
+                    {:op :advance :component :create :desc nil :opts {::foo 2}}
+                    {:op :delete :component :advance :opts {::foo 2}}
+                    {:op :on-deleted :instance :advance}])
         ]))
