@@ -34,11 +34,20 @@
                        (sort-by #(get prop-order (key %) 0)
                                 props)
                        props)]
-    (doseq [[k v] sorted-props
+    (doseq [e sorted-props
+            :let [k (key e)
+                  v (val e)]
             :when (not (contains? arg-set k))]
       (prop/assign! (get props-config k) instance v))
     (with-meta {:props props :instance instance}
                {`component/instance :instance})))
+
+;; TODO microbenchmark
+(defn- combined-keys [m1 m2]
+  (keys
+    (if (< (count m2) (count m1))
+      (into (or m1 {}) m2)
+      (into (or m2 {}) m1))))
 
 (defn- advance-composite-component [this component desc opts]
   (let [props-desc (desc->props-desc desc)
@@ -48,46 +57,48 @@
         (update
           :props
           (fn [props]
-            (let [prop-keys (set (concat (keys props) (keys props-desc)))
+            (let [;; hmm, unclear whether to use a lazy sequence+distinct
+                  ;; or an eager op
+                  prop-keys (combined-keys props props-desc)
                   sorted-prop-keys (if-let [prop-order (:prop-order this)]
                                      (sort-by #(get prop-order % 0) prop-keys)
                                      prop-keys)]
-              (reduce
-                (fn [acc k]
-                  (let [old-e (find props k)
-                        new-e (find props-desc k)]
-                    (cond
-                      (and (some? old-e) (some? new-e))
-                      (let [old-component (val old-e)
-                            desc (val new-e)
-                            prop-config (get props-config k)
-                            new-component (lifecycle/advance (prop/lifecycle prop-config)
-                                                             old-component
-                                                             desc
-                                                             opts)]
-                        (prop/replace! prop-config instance old-component new-component)
-                        (assoc acc k new-component))
-
-                      (some? old-e)
-                      (let [prop-config (get props-config k)]
-                        (prop/retract! prop-config instance (val old-e))
-                        (lifecycle/delete (prop/lifecycle prop-config) (val old-e) opts)
-                        (dissoc acc k))
-
-                      :else
-                      (let [prop-config (get props-config k)
-                            component (lifecycle/create (prop/lifecycle prop-config)
-                                                        (val new-e)
-                                                        opts)]
-                        (prop/assign! prop-config instance component)
-                        (assoc acc k component)))))
-                props
-                sorted-prop-keys)))))))
+              ;; start with {} instead of props so we don't need to dissoc on delete
+              (into {}
+                    (map (fn [k]
+                           (let [old-e (find props k)
+                                 new-e (find props-desc k)]
+                             (if (some? old-e)
+                               (if (some? new-e)
+                                 ;; update
+                                 (let [old-component (val old-e)
+                                       desc (val new-e)
+                                       prop-config (get props-config k)
+                                       new-component (lifecycle/advance (prop/lifecycle prop-config)
+                                                                        old-component
+                                                                        desc
+                                                                        opts)]
+                                   (prop/replace! prop-config instance old-component new-component)
+                                   [k new-component])
+                                 ;; delete
+                                 (let [prop-config (get props-config k)]
+                                   (prop/retract! prop-config instance (val old-e))
+                                   (lifecycle/delete (prop/lifecycle prop-config) (val old-e) opts)
+                                   nil))
+                               ;; create
+                               ;; Note: new-e is non-nil here because (nil? old-e)
+                               (let [prop-config (get props-config k)
+                                     component (lifecycle/create (prop/lifecycle prop-config)
+                                                                 (val new-e)
+                                                                 opts)]
+                                 (prop/assign! prop-config instance component)
+                                 [k component])))))
+                    sorted-prop-keys)))))))
 
 (defn- delete-composite-component [this component opts]
   (let [props-config (:props this)]
-    (doseq [[k v] (:props component)]
-      (lifecycle/delete (prop/lifecycle (get props-config k)) v opts))))
+    (doseq [e (:props component)]
+      (lifecycle/delete (prop/lifecycle (get props-config (key e))) (val e) opts))))
 
 (defn lifecycle [m]
   (with-meta
@@ -138,16 +149,14 @@
                                (first prop-parts)
                                (apply str (map capitalize (rest prop-parts)))))
         fn-name (symbol (str/join "-" prop-parts))]
-    [prop-parts prop-expr fn-name]
     `(fn ~fn-name [~instance-sym]
        (~prop-expr ~instance-sym))))
 
 (defmacro props [type-expr & kvs]
-  `(hash-map
-     ~@(->> kvs
-            (partition 2)
-            (mapcat
-              (fn [[k v]]
+  (into {}
+        (map (fn [[k v :as e]]
+               (assert (= 2 (count e)) "Uneven arguments to props")
+               [k
                 (if (vector? v)
                   (let [[mutator & args] v
                         prop `(prop/make
@@ -168,29 +177,26 @@
                                       (property-change-listener ~type-expr ~k))
                                    mutator)
                                 ~@args)]
-                    [k prop])
-                  [k v]))))))
+                    prop)
+                  v)]))
+        (partition-all 2 kvs)))
 
 (defmacro describe [type-expr & kvs]
   (let [kv-map (apply hash-map kvs)]
     `(lifecycle
-       (hash-map ~@(mapcat
-                     (fn [[k v]]
-                       (case k
-                         :ctor
-                         (let [args (map #(-> % name gensym) v)
-                               ctor-sym (symbol (str type-expr "."))]
-                           `[:ctor (fn [~@args]
-                                     (~ctor-sym ~@args))
-                             :args ~v])
-
-                         :props []
-
-                         [k v]))
-                     kv-map)
-                 :props ~(let [props (:props kv-map)]
-                           (if (map? props)
-                             `(props
-                                ~type-expr
-                                ~@(mapcat identity props))
-                             props))))))
+       ~(into {:props (let [props (:props kv-map)]
+                        (if (map? props)
+                          `(props
+                             ~type-expr
+                             ~@(mapcat identity props))
+                          props))}
+              (map (fn [[k v :as e]]
+                     (case k
+                       :ctor
+                       (let [args (map #(-> % name gensym) v)
+                             ctor-sym (symbol (str type-expr "."))]
+                         {:ctor `(fn [~@args]
+                                   (~ctor-sym ~@args))
+                          :args v})
+                       e)))
+              (dissoc kv-map :props)))))
